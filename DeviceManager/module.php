@@ -421,19 +421,25 @@ class DeviceManager extends IPSModule
         $controls[] = ['type' => 'Label', 'caption' => 'Quelle: ' . $sourceName . ' | Zielwurzel: ' . IPS_GetLocation($this->ReadPropertyInteger('ManagedBuildingRoot'))];
         $controls[] = ['type' => 'Label', 'caption' => count($devices) . ' Geräte erkannt. Markiere Geräte und bearbeite ihre Zuordnung einzeln. Skript-Unterkategorien werden ignoriert.'];
         $editing = $this->ReadAttributeInteger('EditingDevice');
-        $deviceOptions = [['caption' => 'Gerät zur Bearbeitung auswählen', 'value' => 0]];
+        $deviceOptions = [['caption' => 'Gerät auswählen …', 'value' => 0]];
         foreach ($devices as $id => $device) {
             $assignment = $this->DeviceAssignment($id, $device);
-            $caption = $device['name'] . ' → ' . ($assignment['floor'] ?: '?') . '/' . ($assignment['room'] ?: '?') . '/' . ($assignment['trade'] ?: '?') . ' (' . count($device['functions']) . ' Variablen)';
-            $controls[] = ['type' => 'CheckBox', 'name' => 'DeviceSelect_' . $id,
-                'caption' => $caption, 'value' => !empty($selected[$id]),
-                'onChange' => 'SDM_SetDeviceSelection($id, ' . $id . ', $DeviceSelect_' . $id . ');'];
-            if (!empty($selected[$id])) $deviceOptions[] = ['caption' => $device['name'] . ' (' . $id . ')', 'value' => (int) $id];
+            $label = $device['name'] . ' | ' . ($assignment['floor'] ?: '?') . '/' . ($assignment['room'] ?: '?') . '/' . ($assignment['trade'] ?: '?');
+            $deviceOptions[] = ['caption' => $label . ' (' . $id . ')', 'value' => (int) $id];
         }
-        $controls[] = ['type' => 'Select', 'name' => 'EditingDevice', 'caption' => 'Markiertes Gerät bearbeiten',
-            'value' => isset($selected[(string) $editing]) ? $editing : 0, 'options' => $deviceOptions,
+        $controls[] = ['type' => 'Select', 'name' => 'EditingDevice', 'caption' => 'Gerät auswählen (Dropdown)',
+            'value' => isset($devices[(string) $editing]) ? $editing : 0, 'options' => $deviceOptions,
             'onChange' => 'SDM_SetEditingDevice($id, $EditingDevice);'];
-        if ($editing > 0 && !empty($selected[(string) $editing]) && isset($devices[(string) $editing])) {
+        if ($editing > 0 && isset($devices[(string) $editing])) {
+            $device = $devices[(string) $editing];
+            $assignment = $this->DeviceAssignment($editing, $device);
+            $controls[] = ['type' => 'CheckBox', 'name' => 'DeviceSelect_' . $editing,
+                'caption' => 'Dieses Gerät zur Übernahme vormerken (' . count($device['functions']) . ' Variablen vorhanden)',
+                'value' => !empty($selected[(string) $editing]),
+                'onChange' => 'SDM_SetDeviceSelection($id, ' . $editing . ', $DeviceSelect_' . $editing . ');'];
+        }
+        $controls[] = ['type' => 'Label', 'caption' => count($selected) . ' Gerät(e) zur Übernahme vorgemerkt.'];
+        if ($editing > 0 && isset($devices[(string) $editing])) {
             $device = $devices[(string) $editing];
             $assignment = $this->DeviceAssignment($editing, $device);
             $plan = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
@@ -506,7 +512,6 @@ class DeviceManager extends IPSModule
         if ($enabled) $selected[(string) $deviceID] = true;
         else unset($selected[(string) $deviceID]);
         $this->WriteAttributeString('DeviceSelections', json_encode($selected));
-        if ($enabled) $this->WriteAttributeInteger('EditingDevice', $deviceID);
         $this->ReloadForm();
     }
 
