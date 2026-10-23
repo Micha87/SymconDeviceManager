@@ -40,6 +40,7 @@ class DeviceManager extends IPSModule
         $this->RegisterPropertyString('DeviceDraftRows', '[]');
         $this->RegisterAttributeString('DeviceListSearch', '');
         $this->RegisterAttributeString('ExistingDeviceSearch', '');
+        $this->RegisterAttributeString('SeenSourceDevices', '[]');
         $this->RegisterAttributeInteger('ManageDeviceID', 0);
         $this->RegisterAttributeString('ManagedEditDraft', '{}');
         $this->RegisterAttributeString('HardwareSwapDraft', '{}');
@@ -139,6 +140,7 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
                 $draftList,
+                ['type'=>'Button','caption'=>'Alles gesehen','onClick'=>'SDM_MarkAllSourceDevicesSeen($id);'],
                 ['type'=>'ValidationTextBox','name'=>'ExistingDeviceSearch','caption'=>'Angelegte Geräte filtern (Volltext)','value'=>$this->ReadAttributeString('ExistingDeviceSearch'),'onChange'=>'SDM_SetExistingDeviceSearch($id, $ExistingDeviceSearch);'],
                 $this->BuildExistingDeviceList()
             ],
@@ -1086,6 +1088,8 @@ class DeviceManager extends IPSModule
         $linked = $this->ExistingDeviceVariableIDs();
         $saved = [];
         $hidden = 0;
+        $seen = json_decode($this->ReadAttributeString('SeenSourceDevices'),true);
+        if (!is_array($seen)) $seen = [];
         $search = trim($this->ReadAttributeString('DeviceListSearch'));
         $deviceOptions = [['caption' => 'Gerät auswählen', 'value' => 0]];
         $floorOptions = [['caption' => 'Etage wählen', 'value' => '']];
@@ -1097,14 +1101,12 @@ class DeviceManager extends IPSModule
         $roomOptions = array_values($roomOptions);
         foreach ($devices as $id => $device) {
             $a = $this->DeviceAssignment($id, $device);
-            // A managed dummy is already an existing device, even when some source variables are not linked.
             $managedDummy = $this->ManagedDummyID((int)$id,$device,$a);
-            if ($managedDummy) { $hidden++; continue; }
+            if (in_array((int)$id,$seen,true)) { $hidden++; continue; }
             $allLinked = count($device['functions']) > 0;
             foreach ($device['functions'] as $variableID) {
                 if (!isset($linked[$variableID])) { $allLinked = false; break; }
             }
-            if ($allLinked) { $hidden++; continue; }
             $haystack = $device['name'] . ' ' . $device['path'] . ' ' . $id . ' ' . $a['floor'] . ' ' . $a['room'] . ' ' . $a['trade'];
             if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false) continue;
             // Recount from the live source instance to avoid stale zero counts in the editable list.
@@ -1117,7 +1119,8 @@ class DeviceManager extends IPSModule
                 $variableCount = max($variableCount,$directCount);
             }
             $saved[] = ['deviceID' => (int) $id, 'floor' => $a['floor'], 'room' => $a['room'],
-                'trade' => $a['trade'], 'variableCount' => $variableCount];
+                'trade' => $a['trade'], 'variableCount' => $variableCount,
+                'rowColor' => ($managedDummy || $allLinked) ? '#FFFFFF' : '#D9F4DD'];
             $deviceOptions[] = ['caption' => $device['name'] . ' | ' . $device['path'], 'value' => (int) $id];
         }
         $tradeOptions = [];
@@ -1125,7 +1128,7 @@ class DeviceManager extends IPSModule
             $tradeOptions[] = ['caption' => $trade, 'value' => $trade];
         }
         return [
-            'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' offen, ' . $hidden . ' bereits verlinkt ausgeblendet',
+            'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' sichtbar, ' . $hidden . ' als gesehen ausgeblendet',
             'rowCount' => 18, 'add' => true, 'delete' => false, 'width' => '100%',
             'form' => 'return SDM_GetDeviceDialogForm($id, (int)($DeviceDraftRows["deviceID"] ?? 0));',
             'columns' => [
@@ -1137,6 +1140,22 @@ class DeviceManager extends IPSModule
             ],
             'values' => $saved
         ];
+    }
+
+    public function MarkAllSourceDevicesSeen()
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $seen = json_decode($this->ReadAttributeString('SeenSourceDevices'),true);
+        if (!is_array($seen)) $seen = [];
+        $search = trim($this->ReadAttributeString('DeviceListSearch'));
+        foreach ($devices as $id=>$device) {
+            $a = $this->DeviceAssignment($id,$device);
+            $haystack = $device['name'].' '.$device['path'].' '.$id.' '.$a['floor'].' '.$a['room'].' '.$a['trade'];
+            if ($search !== '' && mb_stripos($haystack,$search,0,'UTF-8') === false) continue;
+            $seen[] = (int)$id;
+        }
+        $this->WriteAttributeString('SeenSourceDevices',json_encode(array_values(array_unique($seen))));
+        $this->ReloadForm();
     }
 
     public function AddDeviceDraft()
