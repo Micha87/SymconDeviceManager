@@ -37,13 +37,14 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeInteger('EditingDevice', 0);
         $this->RegisterAttributeString('DeviceSearch', '');
         $this->RegisterAttributeBoolean('ShowExistingDevices', false);
-        $this->RegisterAttributeString('DeviceDraftRows', '[]');
+        $this->RegisterPropertyString('DeviceDraftRows', '[]');
         $this->RegisterAttributeString('DeviceListSearch', '');
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
+        $this->ApplySavedDeviceDraftRows();
         $this->SetStatus(102);
     }
 
@@ -512,8 +513,7 @@ class DeviceManager extends IPSModule
                 ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px', 'add' => 'Unbekannt', 'edit' => ['type' => 'Select', 'options' => $tradeOptions]],
                 ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0]
             ],
-            'values' => $saved,
-            'onEdit' => 'SDM_SaveDeviceDraft($id, json_encode($DeviceDraftRows));'
+            'values' => $saved
         ];
     }
 
@@ -524,6 +524,37 @@ class DeviceManager extends IPSModule
         $rows[] = ['deviceID' => 0, 'floor' => '', 'room' => '', 'trade' => 'Unbekannt', 'variableCount' => 0];
         $this->WriteAttributeString('DeviceDraftRows', json_encode($rows, JSON_UNESCAPED_UNICODE));
         $this->UpdateFormField('DeviceDraftRows', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
+    }
+
+    private function ApplySavedDeviceDraftRows()
+    {
+        $raw = $this->ReadPropertyString('DeviceDraftRows');
+        $rows = json_decode($raw, true);
+        if (!is_array($rows) || !$rows) return;
+        $devices = $this->DiscoverPilotDevices();
+        $assignments = json_decode($this->ReadAttributeString('DeviceAssignments'), true);
+        if (!is_array($assignments)) $assignments = [];
+        $changes = 0;
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $id = (int) ($row['deviceID'] ?? 0);
+            if (!$id || !isset($devices[(string) $id])) continue;
+            $old = $this->DeviceAssignment($id, $devices[(string) $id]);
+            $new = $old;
+            foreach (['floor', 'room', 'trade'] as $field) {
+                if (!isset($row[$field]) || !is_string($row[$field])) continue;
+                $value = trim($row[$field]);
+                if ($value !== '' && $value !== $old[$field]) $new[$field] = $value;
+            }
+            if ($new !== $old) {
+                $assignments[(string) $id] = $new;
+                $changes++;
+            }
+        }
+        if ($changes) {
+            $this->WriteAttributeString('DeviceAssignments', json_encode($assignments, JSON_UNESCAPED_UNICODE));
+            $this->SendDebug('DeviceDraft', $changes . ' Gerätezuordnungen gespeichert', 0);
+        }
     }
 
     public function SaveDeviceDraft(string $rowsInput)
