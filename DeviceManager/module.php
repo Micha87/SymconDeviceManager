@@ -88,6 +88,7 @@ class DeviceManager extends IPSModule
         }
         $importItems = $this->BuildImportControls();
         $deviceItems = $this->BuildDeviceImportControls();
+        $deviceConfigurator = $this->BuildNativeDeviceConfigurator();
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
@@ -134,12 +135,8 @@ class DeviceManager extends IPSModule
                         ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
                     ])]
                 ]],
-                ['type' => 'ExpansionPanel', 'caption' => 'Geräteübernahme – Zuordnung und Variablenauswahl', 'items' => array_merge([
-                    ['type' => 'Label', 'caption' => 'Hardware wird rekursiv erkannt. Geräte markieren, dann je Gerät Raum, Gewerk und zu verlinkende Variablen festlegen. Es wird erst beim Übernehmen geschrieben.'],
-                    ['type' => 'Button', 'caption' => 'Geräte neu erkennen', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);']
-                ], $deviceItems, [
-                    ['type' => 'Button', 'caption' => 'Ausgewählte Geräte mit gewählten Variablen übernehmen', 'onClick' => 'SDM_ApplyDeviceSelection($id);']
-                ])],
+                ['type' => 'Label', 'caption' => 'Neue Geräteauswahl: nativer Symcon-Konfigurator. Vorerst reine Vorschau ohne Schreibaktionen.'],
+                $deviceConfigurator,
                 ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
                     'rowCount' => 12, 'add' => false, 'delete' => false,
                     'columns' => [
@@ -409,6 +406,52 @@ class DeviceManager extends IPSModule
             'room' => $saved['room'] ?? $proposal['room'],
             'trade' => $saved['trade'] ?? $proposal['trade'],
             'variables' => $saved['variables'] ?? []
+        ];
+    }
+
+    private function BuildNativeDeviceConfigurator()
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $linked = $this->ExistingDeviceVariableIDs();
+        $values = [];
+        $hidden = 0;
+        foreach ($devices as $id => $device) {
+            $functions = array_values($device['functions']);
+            $allLinked = count($functions) > 0;
+            foreach ($functions as $variableID) {
+                if (!isset($linked[$variableID])) { $allLinked = false; break; }
+            }
+            if ($allLinked) { $hidden++; continue; }
+            $a = $this->DeviceAssignment($id, $device);
+            $values[] = [
+                'id' => (int) $id,
+                'name' => $device['name'],
+                'device' => $device['name'],
+                'source' => $device['path'],
+                'floor' => $a['floor'] ?: '—',
+                'room' => $a['room'] ?: '—',
+                'trade' => $a['trade'] ?: 'Unbekannt',
+                'variables' => count($functions),
+                'sourceID' => (int) $id
+            ];
+        }
+        return [
+            'type' => 'Configurator',
+            'name' => 'DeviceNativeConfigurator',
+            'caption' => 'Gefundene Geräte (' . count($values) . ' offen, ' . $hidden . ' bereits verlinkt ausgeblendet)',
+            'rowCount' => 18,
+            'delete' => false,
+            'sort' => ['column' => 'device', 'direction' => 'ascending'],
+            'columns' => [
+                ['caption' => 'Gerät', 'name' => 'device', 'width' => '250px'],
+                ['caption' => 'Etage', 'name' => 'floor', 'width' => '70px'],
+                ['caption' => 'Raum', 'name' => 'room', 'width' => '130px'],
+                ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px'],
+                ['caption' => 'Variablen', 'name' => 'variables', 'width' => '85px'],
+                ['caption' => 'Hardware-Pfad', 'name' => 'source', 'width' => 'auto'],
+                ['caption' => 'Quell-ID', 'name' => 'sourceID', 'width' => '90px']
+            ],
+            'values' => $values
         ];
     }
 
