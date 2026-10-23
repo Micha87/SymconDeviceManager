@@ -1116,25 +1116,19 @@ class DeviceManager extends IPSModule
         }
         return [
             'type'=>'ExpansionPanel',
-            'caption'=>'PROTOTYP – Stift direkt in der Gerätezeile',
+            'caption'=>'PROTOTYP – Attribute direkt bearbeiten',
             'expanded'=>false,
             'items'=>[
-                ['type'=>'Label','caption'=>'Testansicht: Stift öffnet den Bearbeitungsdialog für Gerätename, Etage, Raum und Gewerk. Bestehende Instanzen und Links werden nicht verändert.'],
+                ['type'=>'Label','caption'=>'Testansicht: Stift direkt an den Zellen für Gerätename, Etage, Raum und Gewerk. Keine zusätzliche Zahnrad-Aktion. Bestehende Instanzen und Links werden nicht verändert.'],
                 ['type'=>'List','name'=>'DeviceTablePrototype','caption'=>'Geräte (Prototyp)','rowCount'=>12,
                     'add'=>false,'delete'=>false,'loadValuesFromConfiguration'=>false,
-                    'form'=>[
-                        ['type'=>'ValidationTextBox','name'=>'deviceName','caption'=>'Gerätename'],
-                        ['type'=>'ValidationTextBox','name'=>'floor','caption'=>'Etage'],
-                        ['type'=>'ValidationTextBox','name'=>'room','caption'=>'Raum'],
-                        ['type'=>'ValidationTextBox','name'=>'trade','caption'=>'Gewerk']
-                    ],
                     'onEdit'=>'SDM_SaveDeviceTablePrototype($id, json_encode($DeviceTablePrototype));',
                     'columns'=>[
                         ['caption'=>'Quell-ID','name'=>'deviceID','width'=>'75px','save'=>true],
-                        ['caption'=>'Gerätename','name'=>'deviceName','width'=>'170px','save'=>true],
-                        ['caption'=>'Etage','name'=>'floor','width'=>'65px','save'=>true],
-                        ['caption'=>'Raum','name'=>'room','width'=>'135px','save'=>true],
-                        ['caption'=>'Gewerk','name'=>'trade','width'=>'125px','save'=>true],
+                        ['caption'=>'Gerätename','name'=>'deviceName','width'=>'170px','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Etage','name'=>'floor','width'=>'65px','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Raum','name'=>'room','width'=>'135px','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Gewerk','name'=>'trade','width'=>'125px','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Quelle','name'=>'source','width'=>'360px','save'=>true]
                     ],
                     'values'=>$rows
