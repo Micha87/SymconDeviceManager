@@ -35,6 +35,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('DeviceSelections', '{}');
         $this->RegisterAttributeString('DeviceAssignments', '{}');
         $this->RegisterAttributeInteger('EditingDevice', 0);
+        $this->RegisterAttributeString('DeviceSearch', '');
     }
 
     public function ApplyChanges()
@@ -421,12 +422,19 @@ class DeviceManager extends IPSModule
         $controls[] = ['type' => 'Label', 'caption' => 'Quelle: ' . $sourceName . ' | Zielwurzel: ' . IPS_GetLocation($this->ReadPropertyInteger('ManagedBuildingRoot'))];
         $controls[] = ['type' => 'Label', 'caption' => count($devices) . ' Geräte erkannt. Markiere Geräte und bearbeite ihre Zuordnung einzeln. Skript-Unterkategorien werden ignoriert.'];
         $editing = $this->ReadAttributeInteger('EditingDevice');
+        $search = trim($this->ReadAttributeString('DeviceSearch'));
+        $controls[] = ['type' => 'ValidationTextBox', 'name' => 'DeviceSearch', 'caption' => 'Volltextfilter (Gerät, Pfad, Raum, Gewerk)',
+            'value' => $search, 'onChange' => 'SDM_SetDeviceSearch($id, $DeviceSearch);'];
+        $controls[] = ['type' => 'Button', 'caption' => 'Suche anwenden / Liste aktualisieren', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);'];
         $deviceOptions = [['caption' => 'Gerät auswählen …', 'value' => 0]];
         foreach ($devices as $id => $device) {
             $assignment = $this->DeviceAssignment($id, $device);
             $label = $device['name'] . ' | ' . ($assignment['floor'] ?: '?') . '/' . ($assignment['room'] ?: '?') . '/' . ($assignment['trade'] ?: '?');
+            $haystack = $label . ' ' . $device['path'] . ' ' . $id;
+            if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false && (int) $id !== $editing) continue;
             $deviceOptions[] = ['caption' => $label . ' (' . $id . ')', 'value' => (int) $id];
         }
+        $controls[] = ['type' => 'Label', 'caption' => (count($deviceOptions) - 1) . ' Geräte im Auswahldialog (gefiltert).'];
         $controls[] = ['type' => 'Select', 'name' => 'EditingDevice', 'caption' => 'Gerät auswählen (Dropdown)',
             'value' => isset($devices[(string) $editing]) ? $editing : 0, 'options' => $deviceOptions,
             'onChange' => 'SDM_SetEditingDevice($id, $EditingDevice);'];
@@ -439,7 +447,7 @@ class DeviceManager extends IPSModule
                 'onChange' => 'SDM_SetDeviceSelection($id, ' . $editing . ', $DeviceSelect_' . $editing . ');'];
         }
         $controls[] = ['type' => 'Label', 'caption' => count($selected) . ' Gerät(e) zur Übernahme vorgemerkt.'];
-        $controls[] = ['type' => 'Button', 'caption' => 'Zuordnungen aktualisieren (nur bei Bedarf)', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);'];
+        $controls[] = ['type' => 'Button', 'caption' => 'Ausgewähltes Gerät zur Bearbeitung öffnen', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);'];
         if ($editing > 0 && isset($devices[(string) $editing])) {
             $device = $devices[(string) $editing];
             $assignment = $this->DeviceAssignment($editing, $device);
@@ -478,7 +486,11 @@ class DeviceManager extends IPSModule
     public function SetEditingDevice(int $deviceID)
     {
         $this->WriteAttributeInteger('EditingDevice', $deviceID);
-        $this->ReloadForm();
+    }
+
+    public function SetDeviceSearch(string $search)
+    {
+        $this->WriteAttributeString('DeviceSearch', trim($search));
     }
 
     public function SetDeviceAssignment(int $deviceID, string $field, string $value)
