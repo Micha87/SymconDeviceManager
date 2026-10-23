@@ -1,6 +1,6 @@
 <?php
 /**
- * Symcon Device Manager 0.4 - configurable KNX category import.
+ * Symcon Device Manager 0.4.1 - category selection dialogs.
  * Discovers hardware datapoints and proposes room/device/function mappings.
  * Creates device dummies and links only after explicit checkbox selection; never moves hardware.
  */
@@ -93,8 +93,8 @@ class DeviceManager extends IPSModule
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'ManagedBuildingRoot', 'caption' => 'Neue Gebäudestruktur (Ziel-ID)'],
-                ['type' => 'NumberSpinner', 'name' => 'DeviceSourceCategory', 'caption' => 'Gerätequelle (Hardware-Kategorie-ID)'],
-                ['type' => 'NumberSpinner', 'name' => 'DeviceTargetCategory', 'caption' => 'Geräteziel (Gewerk-Kategorie-ID)'],
+                ['type' => 'SelectCategory', 'name' => 'DeviceSourceCategory', 'caption' => 'Gerätequelle auswählen (Hardware)'],
+                ['type' => 'SelectCategory', 'name' => 'DeviceTargetCategory', 'caption' => 'Geräteziel auswählen (Gebäudestruktur)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
                 ['type' => 'Select', 'name' => 'FilterFloor', 'value' => $filterFloor, 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $FilterFloor);'],
                 ['type' => 'Select', 'name' => 'FilterRoom', 'value' => $filterRoom, 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $FilterRoom);'],
@@ -336,6 +336,11 @@ class DeviceManager extends IPSModule
         $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
         if (!is_array($selected)) $selected = [];
         $controls = [];
+        $sourceID = $this->ReadPropertyInteger('DeviceSourceCategory');
+        $sourceName = ($sourceID > 0 && IPS_ObjectExists($sourceID)) ? IPS_GetLocation($sourceID) : 'nicht gefunden';
+        $targetName = $target ? IPS_GetLocation($target) : 'nicht gefunden / außerhalb Gebäude_neu';
+        $controls[] = ['type' => 'Label', 'caption' => 'Aktuelle Quelle: ' . $sourceName . ' (ID ' . $sourceID . ') | Ziel: ' . $targetName];
+        $controls[] = ['type' => 'Label', 'caption' => count($devices) . ' Geräte erkannt. Die Geräteübernahme verwendet keine Filter der allgemeinen Geräteübersicht. Es werden nur direkte Instanzen und Dummy-Gruppen in dieser Kategorie erkannt.'];
         if (!$target) $controls[] = ['type' => 'Label', 'caption' => 'Zielkategorie fehlt oder liegt nicht unter der verwalteten Gebäudestruktur.'];
         foreach ($devices as $id => $device) {
             $dummy = $target ? $this->FindDeviceDummy($target, $device['name']) : 0;
