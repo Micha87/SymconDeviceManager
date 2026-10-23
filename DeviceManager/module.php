@@ -273,7 +273,7 @@ class DeviceManager extends IPSModule
         $devices = [];
         foreach (IPS_GetChildrenIDs($root) as $id) {
             $obj = IPS_GetObject($id);
-            if ($obj['ObjectType'] !== 1) continue;
+            if ($obj['ObjectType'] !== 1) continue; // Kategorien wie Scripte_Funktionen ignorieren
             $isDummy = (IPS_GetInstance($id)['ModuleInfo']['ModuleID'] ?? '') === '{485D0419-BE97-4548-AA9C-C083EB82E61E}';
             $name = $isDummy ? $obj['ObjectName'] : preg_replace('/_(s|d|w)$/iu', '', $obj['ObjectName']);
             $members = $isDummy ? IPS_GetChildrenIDs($id) : [$id];
@@ -283,7 +283,7 @@ class DeviceManager extends IPSModule
                 $instanceName = IPS_GetName($member);
                 $function = 'Wert';
                 if (preg_match('/_s$/iu', $instanceName)) $function = 'Schalten';
-                elseif (preg_match('/_w$/iu', $instanceName)) $function = 'Status';
+                elseif (preg_match('/_w$/iu', $instanceName)) $function = 'Dimmen';
                 elseif (preg_match('/_d$/iu', $instanceName)) $function = 'Dimmen';
                 foreach (IPS_GetChildrenIDs($member) as $variableID) {
                     if (IPS_GetObject($variableID)['ObjectType'] !== 2) continue;
@@ -684,7 +684,7 @@ class DeviceManager extends IPSModule
         } elseif (preg_match('/_d$/iu', $name)) {
             $function = 'Dimmen';
         } elseif (preg_match('/_w$/iu', $name)) {
-            $function = 'Wert/Status (prüfen)';
+            $function = 'Dimmen';
         } elseif (mb_strpos($normalized, 'ist-temperatur') !== false) {
             $function = 'Isttemperatur';
         } elseif (mb_strpos($normalized, 'soll-temperatur') !== false) {
