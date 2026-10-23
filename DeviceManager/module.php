@@ -513,7 +513,7 @@ class DeviceManager extends IPSModule
                 ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0]
             ],
             'values' => $saved,
-            'onEdit' => 'SDM_SaveDeviceDraft($id, $DeviceDraftRows);'
+            'onEdit' => 'SDM_SaveDeviceDraft($id, json_encode($DeviceDraftRows));'
         ];
     }
 
@@ -537,7 +537,11 @@ class DeviceManager extends IPSModule
         } else {
             return;
         }
-        if (!is_array($rows)) return;
+        if (!is_array($rows)) {
+            $this->SendDebug('DeviceDraft', 'Listeneingabe konnte nicht gelesen werden', 0);
+            return;
+        }
+        $this->SendDebug('DeviceDraft', json_encode($rows, JSON_UNESCAPED_UNICODE), 0);
         if (isset($rows['values']) && is_array($rows['values'])) $rows = $rows['values'];
         $devices = $this->DiscoverPilotDevices();
         $savedAssignments = json_decode($this->ReadAttributeString('DeviceAssignments'), true);
