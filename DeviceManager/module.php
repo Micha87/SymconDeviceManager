@@ -1123,13 +1123,10 @@ class DeviceManager extends IPSModule
                 ['type'=>'List','name'=>'DeviceTablePrototype','caption'=>'Geräte (Prototyp)','rowCount'=>12,
                     'add'=>false,'delete'=>false,
                     'form'=>[
-                        'type'=>'ColumnLayout',
-                        'items'=>[
-                            ['type'=>'ValidationTextBox','name'=>'deviceName','caption'=>'Gerätename'],
-                            ['type'=>'ValidationTextBox','name'=>'floor','caption'=>'Etage'],
-                            ['type'=>'ValidationTextBox','name'=>'room','caption'=>'Raum'],
-                            ['type'=>'ValidationTextBox','name'=>'trade','caption'=>'Gewerk']
-                        ]
+                        ['type'=>'ValidationTextBox','name'=>'deviceName','caption'=>'Gerätename'],
+                        ['type'=>'ValidationTextBox','name'=>'floor','caption'=>'Etage'],
+                        ['type'=>'ValidationTextBox','name'=>'room','caption'=>'Raum'],
+                        ['type'=>'ValidationTextBox','name'=>'trade','caption'=>'Gewerk']
                     ],
                     'onEdit'=>'SDM_SaveDeviceTablePrototype($id, json_encode($DeviceTablePrototype));',
                     'columns'=>[
