@@ -89,7 +89,6 @@ class DeviceManager extends IPSModule
         }
         $importItems = $this->BuildImportControls();
         $deviceItems = $this->BuildDeviceImportControls();
-        $deviceConfigurator = $this->BuildNativeDeviceConfigurator();
         $testEditor = $this->BuildUniversalDeviceEditor();
         $draftList = $this->BuildDeviceDraftList();
         $selectOptions = static function ($items) {
@@ -132,7 +131,6 @@ class DeviceManager extends IPSModule
                     ])]
                 ]],
                 ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Vorerst nur Vorschau, keine Erstellung.'],
-                $deviceConfigurator,
                 $draftList,
                 $testEditor
             ],
@@ -458,8 +456,9 @@ class DeviceManager extends IPSModule
     {
         $devices = $this->DiscoverPilotDevices();
         $plan = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
-        $saved = json_decode($this->ReadAttributeString('DeviceDraftRows'), true);
-        if (!is_array($saved)) $saved = [];
+        $linked = $this->ExistingDeviceVariableIDs();
+        $saved = [];
+        $hidden = 0;
         $deviceOptions = [['caption' => 'Gerät auswählen', 'value' => 0]];
         $floorOptions = [['caption' => 'Etage wählen', 'value' => '']];
         $roomOptions = [['caption' => 'Raum wählen', 'value' => '']];
@@ -469,6 +468,14 @@ class DeviceManager extends IPSModule
         }
         $roomOptions = array_values($roomOptions);
         foreach ($devices as $id => $device) {
+            $allLinked = count($device['functions']) > 0;
+            foreach ($device['functions'] as $variableID) {
+                if (!isset($linked[$variableID])) { $allLinked = false; break; }
+            }
+            if ($allLinked) { $hidden++; continue; }
+            $a = $this->DeviceAssignment($id, $device);
+            $saved[] = ['deviceID' => (int) $id, 'floor' => $a['floor'], 'room' => $a['room'],
+                'trade' => $a['trade'], 'variableCount' => count($device['functions'])];
             $deviceOptions[] = ['caption' => $device['name'] . ' | ' . $device['path'], 'value' => (int) $id];
         }
         $tradeOptions = [];
@@ -476,8 +483,8 @@ class DeviceManager extends IPSModule
             $tradeOptions[] = ['caption' => $trade, 'value' => $trade];
         }
         return [
-            'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Geräte zur Übernahme vormerken (Hinzufügen öffnet Dialog)',
-            'rowCount' => 6, 'add' => true, 'delete' => true,
+            'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' offen, ' . $hidden . ' bereits verlinkt ausgeblendet',
+            'rowCount' => 18, 'add' => false, 'delete' => false,
             'columns' => [
                 ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '220px', 'add' => 0, 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
                 ['caption' => 'Etage', 'name' => 'floor', 'width' => '90px', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
@@ -486,7 +493,6 @@ class DeviceManager extends IPSModule
                 ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0]
             ],
             'values' => $saved,
-            'onDelete' => 'SDM_DeleteDeviceDraft($id, $DeviceDraftRows);',
             'onEdit' => 'SDM_SaveDeviceDraft($id, $DeviceDraftRows);'
         ];
     }
