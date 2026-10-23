@@ -39,13 +39,12 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeBoolean('ShowExistingDevices', false);
         $this->RegisterPropertyString('DeviceDraftRows', '[]');
         $this->RegisterAttributeString('DeviceListSearch', '');
-        $this->RegisterAttributeBoolean('ConfirmPilotCreation', false);
+
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-        $this->ApplySavedDeviceDraftRows();
         $this->SetStatus(102);
     }
 
@@ -92,7 +91,6 @@ class DeviceManager extends IPSModule
         }
         $importItems = $this->BuildImportControls();
         $deviceItems = $this->BuildDeviceImportControls();
-        $testEditor = $this->BuildUniversalDeviceEditor();
         $draftList = $this->BuildDeviceDraftList();
         $deviceSearch = ['type' => 'ValidationTextBox', 'name' => 'DeviceListSearch', 'caption' => 'Geräte filtern (Volltext)', 'value' => $this->ReadAttributeString('DeviceListSearch'), 'onChange' => 'SDM_SetDeviceListSearch($id, $DeviceListSearch);'];
         $selectOptions = static function ($items) {
@@ -134,13 +132,9 @@ class DeviceManager extends IPSModule
                         ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
                     ])]
                 ]],
-                ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Die Geräteerstellung ist nur für das ausdrücklich bestätigte Testgerät freigeschaltet.'],
+                ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
-                $draftList,
-                $testEditor,
-                ['type' => 'Label', 'caption' => 'Gerät in der oberen Liste per Checkbox markieren, Änderungen übernehmen und dann die Erstellung bestätigen. Im ersten Test ist nur Klima Wohnzimmer (52319) freigegeben.'],
-                ['type' => 'CheckBox', 'name' => 'ConfirmPilotCreation', 'caption' => 'Ausgewähltes Testgerät in Gebäude_neu erstellen (Bestätigung)', 'value' => $this->ReadAttributeBoolean('ConfirmPilotCreation'), 'onChange' => 'SDM_SetPilotCreationConfirmation($id, $ConfirmPilotCreation);'],
-                ['type' => 'Button', 'caption' => 'MARKIERTES TESTGERÄT ERSTELLEN', 'onClick' => 'SDM_CreatePilotDevice($id);']
+                $draftList
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
@@ -474,6 +468,61 @@ class DeviceManager extends IPSModule
         $this->UpdateFormField('UniversalDeviceSelect', 'value', $deviceID);
     }
 
+    public function GetDeviceDialogForm(int $deviceID): array
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $plan = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
+        $options = [['caption' => 'Gerät auswählen', 'value' => 0]];
+        foreach ($devices as $id => $device) $options[] = ['caption' => $device['name'] . ' (' . $id . ')', 'value' => (int)$id];
+        $floors = [['caption' => 'Etage auswählen', 'value' => '']];
+        $rooms = [['caption' => 'Raum auswählen', 'value' => '']];
+        foreach ($plan as $floor => $roomNames) {
+            $floors[] = ['caption' => $floor, 'value' => $floor];
+            foreach ($roomNames as $room) $rooms[$room] = ['caption' => $room, 'value' => $room];
+        }
+        $rooms = array_values($rooms);
+        $trades = [];
+        foreach (['Unbekannt','Beleuchtung','Heizung','Rollladen','Multimedia','Steckdosen','Sensoren','Sonstige'] as $trade) $trades[] = ['caption' => $trade, 'value' => $trade];
+        $a = isset($devices[(string)$deviceID]) ? $this->DeviceAssignment($deviceID, $devices[(string)$deviceID]) : ['floor'=>'','room'=>'','trade'=>'Unbekannt'];
+        return [
+            ['type'=>'Select','name'=>'deviceID','caption'=>'Gerät','options'=>$options,'value'=>$deviceID,
+                'onChange'=>'SDM_UpdateDeviceDialog($id, $deviceID);'],
+            ['type'=>'Select','name'=>'floor','caption'=>'Etage','options'=>$floors,'value'=>$a['floor']],
+            ['type'=>'Select','name'=>'room','caption'=>'Raum','options'=>$rooms,'value'=>$a['room']],
+            ['type'=>'Select','name'=>'trade','caption'=>'Gewerk','options'=>$trades,'value'=>$a['trade']],
+            ['type'=>'List','name'=>'selectedVariables','caption'=>'Variablen verlinken','rowCount'=>10,'add'=>false,'delete'=>false,
+                'columns'=>[
+                    ['caption'=>'Verlinken','name'=>'enabled','width'=>'95px','edit'=>['type'=>'CheckBox']],
+                    ['caption'=>'Variable','name'=>'name','width'=>'auto','save'=>true],
+                    ['caption'=>'ID','name'=>'variableID','width'=>'90px','save'=>true]
+                ],
+                'values'=>$this->DeviceDialogVariables($deviceID)]
+        ];
+    }
+
+    private function DeviceDialogVariables(int $deviceID): array
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) return [];
+        $a = $this->DeviceAssignment($deviceID, $devices[(string)$deviceID]);
+        $rows = [];
+        foreach ($devices[(string)$deviceID]['functions'] as $function=>$variableID) {
+            if (!IPS_ObjectExists($variableID)) continue;
+            $rows[] = ['enabled'=>array_key_exists((string)$variableID,$a['variables']) ? (bool)$a['variables'][(string)$variableID] : true,
+                'name'=>$function . ' – ' . IPS_GetName($variableID),'variableID'=>(int)$variableID];
+        }
+        return $rows;
+    }
+
+    public function UpdateDeviceDialog(int $deviceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) return;
+        $a = $this->DeviceAssignment($deviceID, $devices[(string)$deviceID]);
+        foreach (['floor','room','trade'] as $field) $this->UpdateFormField($field, 'value', $a[$field]);
+        $this->UpdateFormField('selectedVariables','values',json_encode($this->DeviceDialogVariables($deviceID), JSON_UNESCAPED_UNICODE));
+    }
+
     private function BuildDeviceDraftList()
     {
         $devices = $this->DiscoverPilotDevices();
@@ -500,7 +549,7 @@ class DeviceManager extends IPSModule
             $haystack = $device['name'] . ' ' . $device['path'] . ' ' . $id . ' ' . $a['floor'] . ' ' . $a['room'] . ' ' . $a['trade'];
             if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false) continue;
             $saved[] = ['deviceID' => (int) $id, 'floor' => $a['floor'], 'room' => $a['room'],
-                'trade' => $a['trade'], 'variableCount' => count($device['functions']), 'create' => false];
+                'trade' => $a['trade'], 'variableCount' => count($device['functions'])];
             $deviceOptions[] = ['caption' => $device['name'] . ' | ' . $device['path'], 'value' => (int) $id];
         }
         $tradeOptions = [];
@@ -510,8 +559,8 @@ class DeviceManager extends IPSModule
         return [
             'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' offen, ' . $hidden . ' bereits verlinkt ausgeblendet',
             'rowCount' => 18, 'add' => true, 'delete' => false, 'width' => '100%',
+            'form' => 'return SDM_GetDeviceDialogForm($id, (int)($DeviceDraftRows["deviceID"] ?? 0));',
             'columns' => [
-                ['caption' => 'Erstellen', 'name' => 'create', 'width' => '85px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
                 ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '40%', 'add' => 0, 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
                 ['caption' => 'Etage', 'name' => 'floor', 'width' => '12%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
                 ['caption' => 'Raum', 'name' => 'room', 'width' => '18%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
