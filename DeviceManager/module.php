@@ -592,21 +592,19 @@ class DeviceManager extends IPSModule
                 'source'=>$variableID.' · '.IPS_GetName($variableID),
                 'target'=>isset($linked[$variableID]) ? 'Link vorhanden' : 'Noch nicht verlinkt'];
         }
-        return [
-            ['type'=>'Label','caption'=>'Gerät: '.$device['name'].' ('.$deviceID.') | Dummy: '.$dummy],
-            ['type'=>'Label','caption'=>'Quelle: '.$device['path'].' / '.$device['name'].' ('.$deviceID.')'],
-            ['type'=>'Label','caption'=>'Ziel: '.implode(' / ',array_filter([$a['floor'],$a['room'],$a['trade'],$device['name']])).' (Dummy '.$dummy.')'],
-            ['type'=>'Label','caption'=>'Etage: '.$a['floor'].' | Raum: '.$a['room'].' | Gewerk: '.$a['trade']],
-            ['type'=>'Label','caption'=>'Aktuelle Verknüpfungen sind markiert. Änderungen hier sind zunächst eine Auswahl; Links werden nicht durch OK allein gelöscht.'],
-            ['type'=>'List','name'=>'selectedVariables','caption'=>'Variablen verlinken','rowCount'=>12,'add'=>false,'delete'=>false,
-                'columns'=>[
-                    ['caption'=>'Verlinken','name'=>'enabled','width'=>'95px','edit'=>['type'=>'CheckBox']],
-                    ['caption'=>'Variable','name'=>'name','width'=>'auto'],
-                    ['caption'=>'Quellvariable','name'=>'source','width'=>'25%'],
-                    ['caption'=>'Zielstatus','name'=>'target','width'=>'20%'],
-                    ['caption'=>'ID','name'=>'variableID','width'=>'90px']
-                ],'values'=>$rows]
+        $form = $this->GetDeviceDialogForm($deviceID);
+        $form[0] = ['type'=>'Label','caption'=>'Gerät: '.$device['name'].' ('.$deviceID.') | Dummy: '.$dummy];
+        $form[4]['values'] = $rows;
+        $form[4]['columns'] = [
+            ['caption'=>'Verlinken','name'=>'enabled','width'=>'95px','edit'=>['type'=>'CheckBox']],
+            ['caption'=>'Variable','name'=>'name','width'=>'auto','save'=>true],
+            ['caption'=>'ID','name'=>'variableID','width'=>'90px','save'=>true]
         ];
+        array_splice($form,1,0,[
+            ['type'=>'Label','caption'=>'Quelle: '.$device['path'].' / '.$device['name']],
+            ['type'=>'Label','caption'=>'Ziel: '.implode(' / ',array_filter([$a['floor'],$a['room'],$a['trade'],$device['name']]))]
+        ]);
+        return $form;
     }
 
     private function BuildLinkManagement(): array
