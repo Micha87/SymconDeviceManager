@@ -56,8 +56,11 @@ class ManagedDevice extends IPSModule
         $saved = json_decode($this->ReadPropertyString('Links'),true);
         if (!is_array($saved)) $saved = [];
         $selected = [];
-        foreach ($saved as $entry) {
-            $id = (int)($entry['sourceID'] ?? 0);
+        $sourceIDs = array_keys($vars);
+        foreach ($saved as $index => $entry) {
+            // Symcon List row editor can drop Label fields when a row is edited.
+            // Recover immutable source identity from its original row position.
+            $id = (int)($entry['sourceID'] ?? ($sourceIDs[$index] ?? 0));
             if ($id > 0) $selected[$id] = $entry;
         }
         $rows = [];
@@ -102,10 +105,11 @@ class ManagedDevice extends IPSModule
             $target = (int)IPS_GetLink($child)['TargetID'];
             $existing[$target][] = $child;
         }
-        foreach ($saved as $row) {
-            $sourceID = (int)($row['sourceID'] ?? 0);
-            // Older UI revisions could omit the read-only ID field on row edits.
-            // Never re-target links based on a display name.
+        $sourceIDs = array_keys($sourceVars);
+        foreach ($saved as $index => $row) {
+            $sourceID = (int)($row['sourceID'] ?? ($sourceIDs[$index] ?? 0));
+            // Symcon omits read-only Label fields from edited List rows.
+            // Recover by stable source row position, never by link name.
             if (!$sourceID || !isset($sourceVars[$sourceID])) continue;
             $enabled = (bool)($row['enabled'] ?? true);
             if (!$enabled) continue; // Disabling never destroys existing links automatically.
