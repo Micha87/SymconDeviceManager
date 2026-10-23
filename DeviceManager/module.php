@@ -192,7 +192,7 @@ class DeviceManager extends IPSModule
         return count($rows);
     }
 
-    public function RequestAction($Ident, $Value)
+    public function RequestAction(string $Ident, string $Value)
     {
         if ($Ident === 'RefreshForm') {
             $this->ReloadForm();
@@ -201,14 +201,14 @@ class DeviceManager extends IPSModule
         throw new Exception('Unknown action: ' . $Ident);
     }
 
-    public function SetLiveFilter($field, $value)
+    public function SetLiveFilter(string $field, string $value)
     {
         if (!in_array($field, ['Floor', 'Room', 'Type', 'Text'], true)) throw new Exception('Ungültiger Filter');
         $this->WriteAttributeString('LiveFilter' . $field, (string) $value);
         $this->ReloadForm();
     }
 
-    public function SetDraft($field, $value)
+    public function SetDraft(string $field, string $value)
     {
         if (!in_array($field, ['Floor', 'Room'], true)) throw new Exception('Ungültiges Feld');
         $this->WriteAttributeString('Draft' . $field, trim((string) $value));
@@ -241,7 +241,7 @@ class DeviceManager extends IPSModule
         return $plan;
     }
 
-    public function EditBuildingPlan($action)
+    public function EditBuildingPlan(string $action)
     {
         $plan = json_decode($this->ReadAttributeString('BuildingPlan'), true);
         if (!is_array($plan)) $plan = [];
@@ -362,7 +362,7 @@ class DeviceManager extends IPSModule
         return $controls;
     }
 
-    public function SetDeviceSelection($deviceID, $enabled)
+    public function SetDeviceSelection(int $deviceID, bool $enabled)
     {
         $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
         if (!is_array($selected)) $selected = [];
@@ -474,13 +474,13 @@ class DeviceManager extends IPSModule
         return $controls;
     }
 
-    public function SetShowImportedRooms($enabled)
+    public function SetShowImportedRooms(bool $enabled)
     {
         $this->WriteAttributeBoolean('ShowImportedRooms', (bool) $enabled);
         $this->ReloadForm();
     }
 
-    public function SetImportSelection($roomID, $enabled)
+    public function SetImportSelection(int $roomID, bool $enabled)
     {
         $selected = json_decode($this->ReadAttributeString('ImportSelections'), true);
         if (!is_array($selected)) $selected = [];
@@ -530,7 +530,7 @@ class DeviceManager extends IPSModule
      * Only create categories inside the explicitly configured new building tree.
      * Never move, rename, delete or change hardware objects.
      */
-    public function CreateBuildingCategory($level)
+    public function CreateBuildingCategory(string $level)
     {
         $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
         if ($root <= 0 || !IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) {
