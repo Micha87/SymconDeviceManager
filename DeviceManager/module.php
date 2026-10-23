@@ -29,6 +29,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('DraftFloor', '');
         $this->RegisterAttributeString('DraftRoom', '');
         $this->RegisterAttributeString('ImportSelections', '{}');
+        $this->RegisterAttributeBoolean('ShowImportedRooms', false);
     }
 
     public function ApplyChanges()
@@ -118,6 +119,7 @@ class DeviceManager extends IPSModule
                     ['type' => 'ExpansionPanel', 'caption' => 'Vorhandene Struktur übernehmen (mit Auswahl)', 'items' => array_merge([
                         ['type' => 'Label', 'caption' => 'Quelle: bestehende Gebäude-Kategorie. Etagen, Räume und Gewerke einzeln auswählen. Keine vorhandenen Objekte werden verschoben.'],
                         ['type' => 'Button', 'caption' => 'Vorschläge aktualisieren', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);'],
+                        ['type' => 'CheckBox', 'name' => 'ShowImportedRooms', 'caption' => 'Bereits vollständig übernommene Räume anzeigen', 'value' => $this->ReadAttributeBoolean('ShowImportedRooms'), 'onChange' => 'SDM_SetShowImportedRooms($id, $ShowImportedRooms);'],
                     ], $importItems, [
                         ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
                     ])]
@@ -252,37 +254,76 @@ class DeviceManager extends IPSModule
         $this->ReloadForm();
     }
 
+    private function FindCategoryByName($parent, $name)
+    {
+        if (!IPS_ObjectExists($parent)) return 0;
+        foreach (IPS_GetChildrenIDs($parent) as $id) {
+            $obj = IPS_GetObject($id);
+            if ($obj['ObjectType'] === 0 && $obj['ObjectName'] === $name) return $id;
+        }
+        return 0;
+    }
+
     private function BuildImportControls()
     {
         $source = $this->ReadPropertyInteger('BuildingRoot');
         $target = $this->ReadPropertyInteger('ManagedBuildingRoot');
-        if ($source <= 0 || !IPS_ObjectExists($source) || $source === $target) return [
-            ['type' => 'Label', 'caption' => 'Quellstruktur fehlt oder entspricht der Zielstruktur.']
-        ];
+        if ($source <= 0 || $target <= 0 || !IPS_ObjectExists($source) || !IPS_ObjectExists($target) || $source === $target) {
+            return [['type' => 'Label', 'caption' => 'Quell- oder Zielstruktur fehlt.']];
+        }
         $selected = json_decode($this->ReadAttributeString('ImportSelections'), true);
         if (!is_array($selected)) $selected = [];
-        $controls = [];
+        $pending = [];
+        $complete = [];
         $count = 0;
         foreach (IPS_GetChildrenIDs($source) as $floorID) {
             if (IPS_GetObject($floorID)['ObjectType'] !== 0) continue;
             $floor = IPS_GetName($floorID);
+            $targetFloor = $this->FindCategoryByName($target, $floor);
             foreach (IPS_GetChildrenIDs($floorID) as $roomID) {
                 if (IPS_GetObject($roomID)['ObjectType'] !== 0) continue;
                 $room = IPS_GetName($roomID);
-                $key = (string) $roomID;
-                $controls[] = [
-                    'type' => 'CheckBox', 'name' => 'ImportSelect_' . $roomID,
-                    'caption' => $floor . ' / ' . $room,
-                    'value' => !empty($selected[$key]),
-                    'onChange' => 'SDM_SetImportSelection($id, ' . $roomID . ', $ImportSelect_' . $roomID . ');'
-                ];
+                $targetRoom = $targetFloor ? $this->FindCategoryByName($targetFloor, $room) : 0;
+                $missing = [];
+                if ($targetRoom) {
+                    foreach (IPS_GetChildrenIDs($roomID) as $tradeID) {
+                        $trade = IPS_GetObject($tradeID);
+                        if ($trade['ObjectType'] === 0 && !$this->FindCategoryByName($targetRoom, $trade['ObjectName'])) {
+                            $missing[] = $trade['ObjectName'];
+                        }
+                    }
+                }
+                $isComplete = $targetRoom && count($missing) === 0;
+                $caption = $floor . ' / ' . $room;
+                if ($targetRoom && count($missing) > 0) $caption .= ' (fehlende Gewerke: ' . implode(', ', $missing) . ')';
+                if ($isComplete) {
+                    $complete[] = ['type' => 'Label', 'caption' => '✓ ' . $caption . ' (bereits vorhanden)'];
+                } else {
+                    $pending[] = [
+                        'type' => 'CheckBox', 'name' => 'ImportSelect_' . $roomID,
+                        'caption' => $caption, 'value' => !empty($selected[(string) $roomID]),
+                        'onChange' => 'SDM_SetImportSelection($id, ' . $roomID . ', $ImportSelect_' . $roomID . ');'
+                    ];
+                }
                 $count++;
                 if ($count >= 200) break 2;
             }
         }
+        $controls = [['type' => 'Label', 'caption' => count($pending) . ' offen / ' . count($complete) . ' vollständig übernommen']];
+        if (!$pending) $controls[] = ['type' => 'Label', 'caption' => 'Keine offenen Räume.'];
+        $controls = array_merge($controls, $pending);
+        if ($this->ReadAttributeBoolean('ShowImportedRooms') && $complete) {
+            $controls[] = ['type' => 'Label', 'caption' => 'Bereits vorhandene Räume (nur Anzeige):'];
+            $controls = array_merge($controls, $complete);
+        }
         if ($count >= 200) $controls[] = ['type' => 'Label', 'caption' => 'Anzeige auf 200 Räume begrenzt.'];
-        if ($count === 0) $controls[] = ['type' => 'Label', 'caption' => 'Keine Räume in der Quellstruktur gefunden.'];
         return $controls;
+    }
+
+    public function SetShowImportedRooms($enabled)
+    {
+        $this->WriteAttributeBoolean('ShowImportedRooms', (bool) $enabled);
+        $this->ReloadForm();
     }
 
     public function SetImportSelection($roomID, $enabled)
