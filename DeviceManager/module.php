@@ -1130,12 +1130,12 @@ class DeviceManager extends IPSModule
                     ],
                     'onEdit'=>'SDM_SaveDeviceTablePrototype($id, json_encode($DeviceTablePrototype));',
                     'columns'=>[
-                        ['caption'=>'Quell-ID','name'=>'deviceID','width'=>'90px','save'=>true],
-                        ['caption'=>'Gerätename','name'=>'deviceName','width'=>'23%','save'=>true],
-                        ['caption'=>'Etage','name'=>'floor','width'=>'12%','save'=>true],
-                        ['caption'=>'Raum','name'=>'room','width'=>'17%','save'=>true],
-                        ['caption'=>'Gewerk','name'=>'trade','width'=>'16%','save'=>true],
-                        ['caption'=>'Quelle','name'=>'source','width'=>'25%','save'=>true]
+                        ['caption'=>'Quell-ID','name'=>'deviceID','width'=>'75px','save'=>true],
+                        ['caption'=>'Gerätename','name'=>'deviceName','width'=>'170px','save'=>true],
+                        ['caption'=>'Etage','name'=>'floor','width'=>'65px','save'=>true],
+                        ['caption'=>'Raum','name'=>'room','width'=>'135px','save'=>true],
+                        ['caption'=>'Gewerk','name'=>'trade','width'=>'125px','save'=>true],
+                        ['caption'=>'Quelle','name'=>'source','width'=>'360px','save'=>true]
                     ],
                     'values'=>$rows
                 ]
