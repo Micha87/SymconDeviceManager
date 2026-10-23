@@ -497,30 +497,31 @@ class DeviceManager extends IPSModule
             ['type'=>'Select','name'=>'room','caption'=>'Raum','options'=>$rooms,'value'=>$a['room']],
             ['type'=>'Select','name'=>'trade','caption'=>'Gewerk','options'=>$trades,'value'=>$a['trade']],
             ['type'=>'List','name'=>'selectedVariables','caption'=>'Variablen verlinken','rowCount'=>10,'add'=>false,'delete'=>false,
+                'onEdit'=>'SDM_SaveDialogVariableSelection($id, '.$deviceID.', json_encode($selectedVariables));',
                 'columns'=>[
                     ['caption'=>'Verlinken','name'=>'enabled','width'=>'95px','edit'=>['type'=>'CheckBox']],
                     ['caption'=>'Variable','name'=>'name','width'=>'auto','save'=>true],
                     ['caption'=>'ID','name'=>'variableID','width'=>'90px','save'=>true]
                 ],
                 'values'=>$this->DeviceDialogVariables($deviceID)],
-            ['type'=>'Label','caption'=>'Vor dem Anlegen die Gerätezuordnung mit Änderungen übernehmen speichern. Die unten stehenden Checkboxen speichern die Variablenauswahl direkt.'],
-            ...$this->BuildCreationVariableControls($deviceID),
+            ['type'=>'Label','caption'=>'Variablen ausschließlich oben in der Tabelle auswählen. Die Auswahl wird beim Bearbeiten übernommen.'],
             ['type'=>'Button','caption'=>'Gerät mit ausgewählten Variablen in Gebäude_neu anlegen','onClick'=>'SDM_CreateConfiguredDevice($id, '.$deviceID.');']
         ];
     }
 
-    private function BuildCreationVariableControls(int $deviceID): array
+    public function SaveDialogVariableSelection(int $deviceID, string $rowsJSON)
     {
+        $rows = json_decode($rowsJSON,true);
+        if (!is_array($rows)) throw new Exception('Variablenauswahl konnte nicht gelesen werden.');
         $devices = $this->DiscoverPilotDevices();
-        if (!$deviceID || !isset($devices[(string)$deviceID])) return [];
-        $a = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
-        $items = [];
-        foreach ($devices[(string)$deviceID]['functions'] as $function=>$variableID) {
-            $checked = array_key_exists((string)$variableID,$a['variables']) ? (bool)$a['variables'][(string)$variableID] : false;
-            $items[] = ['type'=>'CheckBox','name'=>'CreateVar_'.$variableID,'caption'=>$function.' ('.$variableID.')',
-                'value'=>$checked,'onChange'=>'SDM_SetDeviceVariable($id, '.$deviceID.', '.$variableID.', $CreateVar_'.$variableID.');'];
+        if (!isset($devices[(string)$deviceID])) throw new Exception('Gerät nicht gefunden.');
+        $valid = array_values($devices[(string)$deviceID]['functions']);
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $varID = (int)($row['variableID'] ?? 0);
+            if (!in_array($varID,$valid,true)) continue;
+            $this->SetDeviceVariable($deviceID,$varID,!empty($row['enabled']));
         }
-        return $items;
     }
 
     public function CreateConfiguredDevice(int $deviceID)
