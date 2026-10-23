@@ -38,6 +38,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('DeviceSearch', '');
         $this->RegisterAttributeBoolean('ShowExistingDevices', false);
         $this->RegisterAttributeString('DeviceDraftRows', '[]');
+        $this->RegisterAttributeString('DeviceListSearch', '');
     }
 
     public function ApplyChanges()
@@ -91,6 +92,7 @@ class DeviceManager extends IPSModule
         $deviceItems = $this->BuildDeviceImportControls();
         $testEditor = $this->BuildUniversalDeviceEditor();
         $draftList = $this->BuildDeviceDraftList();
+        $deviceSearch = ['type' => 'ValidationTextBox', 'name' => 'DeviceListSearch', 'caption' => 'Geräte filtern (Volltext)', 'value' => $this->ReadAttributeString('DeviceListSearch'), 'onChange' => 'SDM_SetDeviceListSearch($id, $DeviceListSearch);'];
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
@@ -131,6 +133,7 @@ class DeviceManager extends IPSModule
                     ])]
                 ]],
                 ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Vorerst nur Vorschau, keine Erstellung.'],
+                $deviceSearch,
                 $draftList,
                 $testEditor
             ],
@@ -452,6 +455,14 @@ class DeviceManager extends IPSModule
         $this->UpdateFormField('UniversalEditor', 'items', json_encode($items, JSON_UNESCAPED_UNICODE));
     }
 
+    public function SetDeviceListSearch(string $search)
+    {
+        $this->WriteAttributeString('DeviceListSearch', trim($search));
+        $list = $this->BuildDeviceDraftList();
+        $this->UpdateFormField('DeviceDraftRows', 'values', json_encode($list['values'], JSON_UNESCAPED_UNICODE));
+        $this->UpdateFormField('DeviceDraftRows', 'caption', $list['caption']);
+    }
+
     private function BuildDeviceDraftList()
     {
         $devices = $this->DiscoverPilotDevices();
@@ -459,6 +470,7 @@ class DeviceManager extends IPSModule
         $linked = $this->ExistingDeviceVariableIDs();
         $saved = [];
         $hidden = 0;
+        $search = trim($this->ReadAttributeString('DeviceListSearch'));
         $deviceOptions = [['caption' => 'Gerät auswählen', 'value' => 0]];
         $floorOptions = [['caption' => 'Etage wählen', 'value' => '']];
         $roomOptions = [['caption' => 'Raum wählen', 'value' => '']];
@@ -474,6 +486,8 @@ class DeviceManager extends IPSModule
             }
             if ($allLinked) { $hidden++; continue; }
             $a = $this->DeviceAssignment($id, $device);
+            $haystack = $device['name'] . ' ' . $device['path'] . ' ' . $id . ' ' . $a['floor'] . ' ' . $a['room'] . ' ' . $a['trade'];
+            if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false) continue;
             $saved[] = ['deviceID' => (int) $id, 'floor' => $a['floor'], 'room' => $a['room'],
                 'trade' => $a['trade'], 'variableCount' => count($device['functions'])];
             $deviceOptions[] = ['caption' => $device['name'] . ' | ' . $device['path'], 'value' => (int) $id];
@@ -484,11 +498,11 @@ class DeviceManager extends IPSModule
         }
         return [
             'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' offen, ' . $hidden . ' bereits verlinkt ausgeblendet',
-            'rowCount' => 18, 'add' => false, 'delete' => false,
+            'rowCount' => 18, 'add' => true, 'delete' => false, 'width' => '100%',
             'columns' => [
-                ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '220px', 'add' => 0, 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
-                ['caption' => 'Etage', 'name' => 'floor', 'width' => '90px', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
-                ['caption' => 'Raum', 'name' => 'room', 'width' => '130px', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
+                ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '40%', 'add' => 0, 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
+                ['caption' => 'Etage', 'name' => 'floor', 'width' => '12%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
+                ['caption' => 'Raum', 'name' => 'room', 'width' => '18%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
                 ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px', 'add' => 'Unbekannt', 'edit' => ['type' => 'Select', 'options' => $tradeOptions]],
                 ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0]
             ],
