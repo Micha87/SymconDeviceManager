@@ -140,7 +140,6 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
                 $nativeConfigurator,
-                $this->BuildAssignmentEditList(),
 
             ],
             'actions' => [
@@ -1097,55 +1096,6 @@ class DeviceManager extends IPSModule
     {
         $this->WriteAttributeInteger('ManageDeviceID',$deviceID);
         $this->ReloadForm();
-    }
-
-    private function BuildAssignmentEditList(): array
-    {
-        $rows = [];
-        $search = trim($this->ReadAttributeString('DeviceListSearch'));
-        foreach ($this->DiscoverPilotDevices() as $id => $device) {
-            $a = $this->DeviceAssignment((int)$id, $device);
-            if ($search !== '' && mb_stripos($device['name'].' '.$a['deviceName'].' '.$a['floor'].' '.$a['room'].' '.$a['trade'], $search, 0, 'UTF-8') === false) continue;
-            $rows[] = ['deviceID'=>(int)$id, 'deviceName'=>$a['deviceName'], 'floor'=>$a['floor'], 'room'=>$a['room'], 'trade'=>$a['trade']];
-        }
-        return [
-            'type'=>'List', 'name'=>'DeviceAssignmentEditor', 'caption'=>'Gerätezuordnung bearbeiten (Zahnrad)',
-            'rowCount'=>10, 'add'=>false, 'delete'=>false,
-            'onEdit'=>'SDM_SaveAssignmentEditRows($id, json_encode($DeviceAssignmentEditor));',
-            'columns'=>[
-                ['caption'=>'Quell-ID','name'=>'deviceID','width'=>'90px','save'=>true],
-                ['caption'=>'Gerätename','name'=>'deviceName','width'=>'30%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                ['caption'=>'Etage','name'=>'floor','width'=>'15%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                ['caption'=>'Raum','name'=>'room','width'=>'25%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                ['caption'=>'Gewerk','name'=>'trade','width'=>'20%','save'=>true,'edit'=>['type'=>'ValidationTextBox']]
-            ],
-            'values'=>$rows
-        ];
-    }
-
-    public function SaveAssignmentEditRows(string $json): void
-    {
-        $rows = json_decode($json, true);
-        if (!is_array($rows)) throw new Exception('Gerätetabelle konnte nicht gelesen werden.');
-        if (isset($rows['deviceID'])) $rows = [$rows];
-        $devices = $this->DiscoverPilotDevices();
-        $all = json_decode($this->ReadAttributeString('DeviceAssignments'), true);
-        if (!is_array($all)) $all = [];
-        foreach ($rows as $row) {
-            if (!is_array($row)) continue;
-            $id = (int)($row['deviceID'] ?? 0);
-            if (!$id || !isset($devices[$id])) continue;
-            $a = $this->DeviceAssignment($id, $devices[$id]);
-            foreach (['deviceName','floor','room','trade'] as $field) {
-                if (!isset($row[$field]) || !is_string($row[$field])) continue;
-                $value = trim($row[$field]);
-                if ($value === '' || mb_strlen($value, 'UTF-8') > 100 || strpos($value, '/') !== false) continue;
-                $a[$field] = $value;
-            }
-            $all[(string)$id] = $a;
-        }
-        $this->WriteAttributeString('DeviceAssignments', json_encode($all, JSON_UNESCAPED_UNICODE));
-        $this->UpdateFormField('DeviceNativeConfigurator', 'values', json_encode($this->BuildNativeDeviceConfigurator()['values'], JSON_UNESCAPED_UNICODE));
     }
 
     private function BuildNativeDeviceConfigurator(): array
