@@ -143,7 +143,6 @@ class DeviceManager extends IPSModule
 
             ],
             'actions' => [
-                $this->BuildDeviceTablePrototype(),
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
                 ['type' => 'Label', 'caption' => 'Nach dem Scan die Konfiguration erneut öffnen, um die Vorschläge zu sehen.']
             ]
@@ -1100,68 +1099,6 @@ class DeviceManager extends IPSModule
     }
 
     // Experimental single-table editor. Does not replace the production Configurator.
-    private function BuildDeviceTablePrototype(): array
-    {
-        $rows = [];
-        foreach ($this->DiscoverPilotDevices() as $id => $device) {
-            $a = $this->DeviceAssignment((int)$id, $device);
-            $rows[] = [
-                'deviceID'=>(int)$id,
-                'deviceName'=>(string)$a['deviceName'],
-                'floor'=>(string)$a['floor'],
-                'room'=>(string)$a['room'],
-                'trade'=>(string)$a['trade'],
-                'source'=>(string)$device['path']
-            ];
-        }
-        return [
-            'type'=>'ExpansionPanel',
-            'caption'=>'PROTOTYP – Attribute direkt bearbeiten',
-            'expanded'=>false,
-            'items'=>[
-                ['type'=>'Label','caption'=>'Testansicht: Stift direkt an den Zellen für Gerätename, Etage, Raum und Gewerk. Keine zusätzliche Zahnrad-Aktion. Bestehende Instanzen und Links werden nicht verändert.'],
-                ['type'=>'List','name'=>'DeviceTablePrototype','caption'=>'Geräte (Prototyp)','rowCount'=>12,
-                    'add'=>false,'delete'=>false,'loadValuesFromConfiguration'=>false,
-                    'onEdit'=>'SDM_SaveDeviceTablePrototype($id, json_encode($DeviceTablePrototype));',
-                    'columns'=>[
-                        ['caption'=>'Quell-ID','name'=>'deviceID','width'=>'75px','save'=>true],
-                        ['caption'=>'Gerätename','name'=>'deviceName','width'=>'170px','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Etage','name'=>'floor','width'=>'65px','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Raum','name'=>'room','width'=>'135px','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Gewerk','name'=>'trade','width'=>'125px','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Quelle','name'=>'source','width'=>'360px','save'=>true]
-                    ],
-                    'values'=>$rows
-                ]
-            ]
-        ];
-    }
-
-    public function SaveDeviceTablePrototype(string $json): void
-    {
-        $rows = json_decode($json,true);
-        if (!is_array($rows)) throw new Exception('Prototyp-Tabelle nicht lesbar.');
-        if (isset($rows['deviceID'])) $rows = [$rows];
-        $devices = $this->DiscoverPilotDevices();
-        $all = json_decode($this->ReadAttributeString('DeviceAssignments'),true);
-        if (!is_array($all)) $all = [];
-        foreach ($rows as $row) {
-            if (!is_array($row)) continue;
-            $id = (int)($row['deviceID'] ?? 0);
-            if ($id <= 0 || !isset($devices[$id])) continue;
-            $assignment = $this->DeviceAssignment($id,$devices[$id]);
-            foreach (['deviceName','floor','room','trade'] as $field) {
-                if (!isset($row[$field]) || !is_string($row[$field])) continue;
-                $value = trim($row[$field]);
-                if ($value === '' || mb_strlen($value,'UTF-8') > 100 || strpos($value,'/') !== false) continue;
-                $assignment[$field] = $value;
-            }
-            $all[(string)$id] = $assignment;
-        }
-        $this->WriteAttributeString('DeviceAssignments',json_encode($all,JSON_UNESCAPED_UNICODE));
-        $this->UpdateFormField('DeviceNativeConfigurator','values',json_encode($this->BuildNativeDeviceConfigurator()['values'],JSON_UNESCAPED_UNICODE));
-    }
-
     private function BuildNativeDeviceConfigurator(): array
     {
         $devices = $this->DiscoverPilotDevices();
@@ -1185,7 +1122,7 @@ class DeviceManager extends IPSModule
                 'deviceID'=>(int)$id,
                 'type'=>'Gerät',
                 'area'=>$a['floor'].' / '.$a['room'],
-                'device'=>$device['name'],
+                'device'=>(string)($nativeInstance > 0 ? IPS_GetName($nativeInstance) : ($a['deviceName'] ?? $device['name'])),
                 'source'=>$device['path'],
                 'trade'=>$a['trade'],
                 'variables'=>count($device['functions']),
@@ -1195,6 +1132,9 @@ class DeviceManager extends IPSModule
                     'configuration'=>[
                         'SourceInstanceID'=>(int)$id,
                         'DeviceName'=>(string)($a['deviceName'] ?? $device['name']),
+                        'Floor'=>(string)$a['floor'],
+                        'Room'=>(string)$a['room'],
+                        'Trade'=>(string)$a['trade'],
                         'Links'=>json_encode(array_map(static function($variableID) { return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>(IPS_GetName((int)$variableID) === 'Wert' && IPS_GetParent((int)$variableID) > 0 ? IPS_GetName(IPS_GetParent((int)$variableID)) : IPS_GetName((int)$variableID))]; },array_values($device['functions'])),JSON_UNESCAPED_UNICODE)
                     ],
                     'location'=>array_values(array_filter([$a['floor'],$a['room'],$a['trade']]))
