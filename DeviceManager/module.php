@@ -89,6 +89,7 @@ class DeviceManager extends IPSModule
         $importItems = $this->BuildImportControls();
         $deviceItems = $this->BuildDeviceImportControls();
         $deviceConfigurator = $this->BuildNativeDeviceConfigurator();
+        $testEditor = $this->BuildTestDeviceEditor(52319);
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
@@ -136,6 +137,7 @@ class DeviceManager extends IPSModule
                 ]],
                 ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Vorerst nur Vorschau, keine Erstellung.'],
                 $deviceConfigurator,
+                $testEditor,
                 ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
                     'rowCount' => 12, 'add' => false, 'delete' => false,
                     'columns' => [
@@ -406,6 +408,46 @@ class DeviceManager extends IPSModule
             'trade' => $saved['trade'] ?? $proposal['trade'],
             'variables' => $saved['variables'] ?? []
         ];
+    }
+
+    private function BuildTestDeviceEditor($deviceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string) $deviceID])) {
+            return ['type' => 'Label', 'caption' => 'Testeditor: Shelly Klima Wohnzimmer (52319) ist in der gewählten Hardwarequelle nicht enthalten.'];
+        }
+        $device = $devices[(string) $deviceID];
+        $a = $this->DeviceAssignment($deviceID, $device);
+        $plan = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
+        $floorOptions = [];
+        foreach (array_keys($plan) as $floor) $floorOptions[] = ['caption' => $floor, 'value' => $floor];
+        if ($a['floor'] !== '' && !isset($plan[$a['floor']])) $floorOptions[] = ['caption' => $a['floor'], 'value' => $a['floor']];
+        $rooms = $plan[$a['floor']] ?? [];
+        $roomOptions = [];
+        foreach ($rooms as $room) $roomOptions[] = ['caption' => $room, 'value' => $room];
+        if ($a['room'] !== '' && !in_array($a['room'], $rooms, true)) $roomOptions[] = ['caption' => $a['room'], 'value' => $a['room']];
+        $tradeOptions = [];
+        foreach (['Unbekannt', 'Beleuchtung', 'Heizung', 'Rollladen', 'Multimedia', 'Steckdosen', 'Sensoren', 'Sonstige'] as $trade) {
+            $tradeOptions[] = ['caption' => $trade, 'value' => $trade];
+        }
+        $items = [
+            ['type' => 'Label', 'caption' => 'Testgerät: ' . $device['name'] . ' | ' . $device['path'] . '. Änderungen werden nur als Entwurf gespeichert. Keine Dummys oder Links werden angelegt.'],
+            ['type' => 'Select', 'name' => 'TestFloor', 'caption' => 'Etage', 'value' => $a['floor'], 'options' => $floorOptions,
+                'onChange' => 'SDM_SetDeviceAssignment($id, ' . $deviceID . ', "floor", $TestFloor);'],
+            ['type' => 'Select', 'name' => 'TestRoom', 'caption' => 'Raum', 'value' => $a['room'], 'options' => $roomOptions,
+                'onChange' => 'SDM_SetDeviceAssignment($id, ' . $deviceID . ', "room", $TestRoom);'],
+            ['type' => 'Select', 'name' => 'TestTrade', 'caption' => 'Gewerk', 'value' => $a['trade'], 'options' => $tradeOptions,
+                'onChange' => 'SDM_SetDeviceAssignment($id, ' . $deviceID . ', "trade", $TestTrade);'],
+            ['type' => 'Label', 'caption' => 'Zu verlinkende Variablen (nur Entwurf):']
+        ];
+        foreach ($device['functions'] as $function => $variableID) {
+            $checked = array_key_exists((string) $variableID, $a['variables']) ? (bool) $a['variables'][(string) $variableID] : true;
+            $items[] = ['type' => 'CheckBox', 'name' => 'TestVar_' . $variableID,
+                'caption' => IPS_GetName($variableID) . ' (' . $variableID . ') – ' . $function,
+                'value' => $checked,
+                'onChange' => 'SDM_SetDeviceVariable($id, ' . $deviceID . ', ' . $variableID . ', $TestVar_' . $variableID . ');'];
+        }
+        return ['type' => 'ExpansionPanel', 'caption' => 'Test: Klima Wohnzimmer – Raum, Gewerk und Variablen bearbeiten', 'items' => $items];
     }
 
     private function BuildNativeDeviceConfigurator()
