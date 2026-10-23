@@ -1135,6 +1135,7 @@ class DeviceManager extends IPSModule
                         'Floor'=>(string)$a['floor'],
                         'Room'=>(string)$a['room'],
                         'Trade'=>(string)$a['trade'],
+                        'ManagedBuildingRoot'=>$this->ReadPropertyInteger('ManagedBuildingRoot'),
                         'Links'=>json_encode(array_map(static function($variableID) { return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>(IPS_GetName((int)$variableID) === 'Wert' && IPS_GetParent((int)$variableID) > 0 ? IPS_GetName(IPS_GetParent((int)$variableID)) : IPS_GetName((int)$variableID))]; },array_values($device['functions'])),JSON_UNESCAPED_UNICODE)
                     ],
                     'location'=>array_values(array_filter([$a['floor'],$a['room'],$a['trade']]))
