@@ -1103,8 +1103,17 @@ class DeviceManager extends IPSModule
             if ($allLinked) { $hidden++; continue; }
             $haystack = $device['name'] . ' ' . $device['path'] . ' ' . $id . ' ' . $a['floor'] . ' ' . $a['room'] . ' ' . $a['trade'];
             if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false) continue;
+            // Recount from the live source instance to avoid stale zero counts in the editable list.
+            $variableCount = count($device['functions']);
+            if (IPS_ObjectExists((int)$id) && IPS_GetObject((int)$id)['ObjectType'] === 1) {
+                $directCount = 0;
+                foreach (IPS_GetChildrenIDs((int)$id) as $childID) {
+                    if (IPS_GetObject($childID)['ObjectType'] === 2) $directCount++;
+                }
+                $variableCount = max($variableCount,$directCount);
+            }
             $saved[] = ['deviceID' => (int) $id, 'floor' => $a['floor'], 'room' => $a['room'],
-                'trade' => $a['trade'], 'variableCount' => count($device['functions'])];
+                'trade' => $a['trade'], 'variableCount' => $variableCount];
             $deviceOptions[] = ['caption' => $device['name'] . ' | ' . $device['path'], 'value' => (int) $id];
         }
         $tradeOptions = [];
