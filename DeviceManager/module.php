@@ -439,6 +439,7 @@ class DeviceManager extends IPSModule
                 'onChange' => 'SDM_SetDeviceSelection($id, ' . $editing . ', $DeviceSelect_' . $editing . ');'];
         }
         $controls[] = ['type' => 'Label', 'caption' => count($selected) . ' Gerät(e) zur Übernahme vorgemerkt.'];
+        $controls[] = ['type' => 'Button', 'caption' => 'Zuordnungen aktualisieren (nur bei Bedarf)', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);'];
         if ($editing > 0 && isset($devices[(string) $editing])) {
             $device = $devices[(string) $editing];
             $assignment = $this->DeviceAssignment($editing, $device);
@@ -491,7 +492,6 @@ class DeviceManager extends IPSModule
         $all[(string) $deviceID][$field] = trim($value);
         if ($field === 'floor') $all[(string) $deviceID]['room'] = '';
         $this->WriteAttributeString('DeviceAssignments', json_encode($all, JSON_UNESCAPED_UNICODE));
-        $this->ReloadForm();
     }
 
     public function SetDeviceVariable(int $deviceID, int $variableID, bool $enabled)
@@ -512,7 +512,6 @@ class DeviceManager extends IPSModule
         if ($enabled) $selected[(string) $deviceID] = true;
         else unset($selected[(string) $deviceID]);
         $this->WriteAttributeString('DeviceSelections', json_encode($selected));
-        $this->ReloadForm();
     }
 
     public function ApplyDeviceSelection()
