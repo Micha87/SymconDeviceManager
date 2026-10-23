@@ -39,6 +39,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeBoolean('ShowExistingDevices', false);
         $this->RegisterPropertyString('DeviceDraftRows', '[]');
         $this->RegisterAttributeString('DeviceListSearch', '');
+        $this->RegisterAttributeInteger('ManageDeviceID', 0);
 
     }
 
@@ -135,7 +136,8 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
                 $draftList,
-                $this->BuildExistingDeviceList()
+                $this->BuildExistingDeviceList(),
+                $this->BuildLinkManagement()
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
@@ -550,6 +552,50 @@ class DeviceManager extends IPSModule
                 ['caption'=>'Dummy-ID','name'=>'dummyID','width'=>'90px'],
                 ['caption'=>'Links','name'=>'links','width'=>'70px']
             ],'values'=>$rows];
+    }
+
+    private function BuildLinkManagement(): array
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $options = [['caption'=>'Gerät wählen','value'=>0]];
+        foreach ($devices as $id=>$device) {
+            $a = $this->DeviceAssignment($id,$device);
+            $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+            $floor = $this->FindCategoryByName($root,$a['floor']);
+            $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
+            $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
+            if ($trade && $this->FindDeviceDummy($trade,$device['name'])) $options[] = ['caption'=>$device['name'].' ('.$id.')','value'=>(int)$id];
+        }
+        $id = $this->ReadAttributeInteger('ManageDeviceID');
+        $items = [['type'=>'Select','name'=>'ManageDeviceSelect','caption'=>'Angelegtes Gerät','value'=>$id,'options'=>$options,
+            'onChange'=>'SDM_SelectLinkDevice($id, $ManageDeviceSelect);']];
+        if ($id && isset($devices[(string)$id])) {
+            $a = $this->DeviceAssignment($id,$devices[(string)$id]);
+            $floor = $this->FindCategoryByName($this->ReadPropertyInteger('ManagedBuildingRoot'),$a['floor']);
+            $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
+            $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
+            $dummy = $trade ? $this->FindDeviceDummy($trade,$devices[(string)$id]['name']) : 0;
+            if ($dummy) {
+                $linked = [];
+                foreach (IPS_GetChildrenIDs($dummy) as $child) {
+                    if (IPS_GetObject($child)['ObjectType'] === 6) $linked[IPS_GetLink($child)['TargetID']] = true;
+                }
+                foreach ($devices[(string)$id]['functions'] as $function=>$variableID) {
+                    $enabled = array_key_exists((string)$variableID,$a['variables']) ? (bool)$a['variables'][(string)$variableID] : isset($linked[$variableID]);
+                    $items[] = ['type'=>'CheckBox','name'=>'ManageVar_'.$variableID,
+                        'caption'=>(isset($linked[$variableID]) ? 'Verlinkt: ' : 'Nicht verlinkt: ').$function.' ('.$variableID.')',
+                        'value'=>$enabled,'onChange'=>'SDM_SetDeviceVariable($id, '.$id.', '.$variableID.', $ManageVar_'.$variableID.');'];
+                }
+                $items[] = ['type'=>'Button','caption'=>'Variablenlinks abgleichen','onClick'=>'SDM_SyncManagedDeviceLinks($id, '.$id.');'];
+            }
+        }
+        return ['type'=>'ExpansionPanel','caption'=>'Variablen bestehender Geräte hinzufügen / entfernen','items'=>$items];
+    }
+
+    public function SelectLinkDevice(int $deviceID)
+    {
+        $this->WriteAttributeInteger('ManageDeviceID',$deviceID);
+        $this->ReloadForm();
     }
 
     private function BuildDeviceDraftList()
