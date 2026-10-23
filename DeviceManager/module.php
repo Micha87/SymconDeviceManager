@@ -696,10 +696,16 @@ class DeviceManager extends IPSModule
             $form[$index]['value'] = $draft[$field] ?? $a[$field];
             $form[$index]['onChange'] = 'SDM_SetManagedEditField($id, '.$deviceID.', "'.$field.'", $'.$field.');';
         }
+        foreach ($rows as &$row) {
+            $varID = (string)$row['variableID'];
+            $row['name'] = $a['linkNames'][$varID] ?? (isset($linked[(int)$varID]) ? IPS_GetName($linked[(int)$varID]) : IPS_GetName((int)$varID));
+        }
+        unset($row);
         $form[4]['values'] = $rows;
+        $form[4]['onEdit'] = 'SDM_SaveExistingLinkNames($id, '.$deviceID.', json_encode($selectedVariables));';
         $form[4]['columns'] = [
             ['caption'=>'Verlinken','name'=>'enabled','width'=>'75px','edit'=>['type'=>'CheckBox']],
-            ['caption'=>'Variable','name'=>'name','width'=>'30%'],
+            ['caption'=>'Linkname','name'=>'name','width'=>'30%','edit'=>['type'=>'ValidationTextBox'],'save'=>true],
             ['caption'=>'Quelle (ID / Name)','name'=>'source','width'=>'30%'],
             ['caption'=>'Ziel-Link (ID / Name)','name'=>'target','width'=>'30%']
         ];
@@ -709,18 +715,39 @@ class DeviceManager extends IPSModule
             ['type'=>'Label','caption'=>'Raum/Gewerk ändern: Auswahl speichern und dann mit dem Button verschieben. Dummy- und Link-IDs bleiben erhalten.'],
             ['type'=>'Button','caption'=>'Gerät in gewählten Raum / Gewerk verschieben','onClick'=>'SDM_MoveManagedDevice($id, '.$deviceID.');']
         ]);
-        $swapOptions = [['caption'=>'Keine Änderung','value'=>0]];
-        foreach ($devices as $sourceID=>$sourceDevice) {
-            if ((int)$sourceID === $deviceID) continue;
-            $swapOptions[] = ['caption'=>$sourceDevice['name'].' ('.$sourceID.')','value'=>(int)$sourceID];
-        }
         $swapDrafts = json_decode($this->ReadAttributeString('HardwareSwapDraft'),true);
         $newSourceID = (int)(is_array($swapDrafts) ? ($swapDrafts[(string)$deviceID] ?? 0) : 0);
-        $form[] = ['type'=>'Select','name'=>'ReplacementSource','caption'=>'Neue Quellinstanz (Hardwaretausch)','value'=>$newSourceID,
-            'options'=>$swapOptions,'onChange'=>'SDM_SetHardwareSwapSource($id, '.$deviceID.', $ReplacementSource);'];
+        $form[] = ['type'=>'SelectInstance','name'=>'ReplacementSource','caption'=>'Neue Quellinstanz (Hardwaretausch)','value'=>$newSourceID,
+            'onChange'=>'SDM_SetHardwareSwapSource($id, '.$deviceID.', $ReplacementSource);'];
         $form[] = ['type'=>'Label','caption'=>'Hardwaretausch nur bei eindeutiger Übereinstimmung aller verlinkten Funktionsnamen. Sonst wird nichts geändert.'];
         $form[] = ['type'=>'Button','caption'=>'Hardwaretausch ausführen (bestehende Links umstellen)','onClick'=>'SDM_ApplyHardwareSwap($id, '.$deviceID.');'];
         return $form;
+    }
+
+    public function SaveExistingLinkNames(int $deviceID, string $rowsJSON)
+    {
+        $rows = json_decode($rowsJSON,true);
+        if (!is_array($rows)) throw new Exception('Ungültige Variablenliste.');
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) throw new Exception('Gerät fehlt.');
+        $a = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        $floor = $this->FindCategoryByName($root,$a['floor']);
+        $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
+        $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
+        $dummy = $trade ? $this->FindDeviceDummy($trade,$devices[(string)$deviceID]['name']) : 0;
+        if (!$dummy) throw new Exception('Dummy fehlt.');
+        $targets = [];
+        foreach (IPS_GetChildrenIDs($dummy) as $child) {
+            if (IPS_GetObject($child)['ObjectType'] === 6) $targets[IPS_GetLink($child)['TargetID']] = $child;
+        }
+        foreach ($rows as $row) {
+            $varID = (int)($row['variableID'] ?? 0);
+            $name = trim((string)($row['name'] ?? ''));
+            if ($name === '' || !in_array($varID,array_values($devices[(string)$deviceID]['functions']),true)) continue;
+            $this->SetDeviceLinkName($deviceID,$varID,$name);
+            if (isset($targets[$varID]) && IPS_GetName($targets[$varID]) !== $name) IPS_SetName($targets[$varID],$name);
+        }
     }
 
     public function SetHardwareSwapSource(int $deviceID, int $newSourceID)
