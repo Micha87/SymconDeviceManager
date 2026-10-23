@@ -758,6 +758,11 @@ class DeviceManager extends IPSModule
             $room = $floor ? $this->FindCategoryByName($floor, $a['room']) : 0;
             $trade = $room ? $this->FindCategoryByName($room, $a['trade']) : 0;
             $dummy = $this->ManagedDummyID((int)$id,$device,$a);
+            $nativeInstance = 0;
+            foreach (IPS_GetInstanceListByModuleID('{7C91D1A2-29C9-4DF7-86BD-BB23E4795C71}') as $managedID) {
+                $settings = json_decode(IPS_GetConfiguration($managedID),true);
+                if ((int)($settings['SourceInstanceID'] ?? 0) === (int)$id) { $nativeInstance = $managedID; break; }
+            }
             if (!$dummy) continue;
             if (isset($seenDummies[$dummy])) continue;
             // A dummy is one managed device, even if multiple source instances share its name.
@@ -1119,7 +1124,15 @@ class DeviceManager extends IPSModule
                 'source'=>$device['path'],
                 'trade'=>$a['trade'],
                 'variables'=>count($device['functions']),
-                'instanceID'=>$dummy ?: 0
+                'instanceID'=>$nativeInstance ?: 0,
+                'create'=>[
+                    'moduleID'=>'{7C91D1A2-29C9-4DF7-86BD-BB23E4795C71}',
+                    'configuration'=>[
+                        'SourceInstanceID'=>(int)$id,
+                        'Links'=>json_encode(array_map(static function($variableID) { return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>IPS_GetName((int)$variableID)]; },array_values($device['functions'])),JSON_UNESCAPED_UNICODE)
+                    ],
+                    'location'=>array_values(array_filter([$a['floor'],$a['room'],$a['trade']]))
+                ]
             ];
         }
         return [
