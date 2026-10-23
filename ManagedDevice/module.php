@@ -13,6 +13,7 @@ class ManagedDevice extends IPSModule
         $this->RegisterPropertyString('Floor', '');
         $this->RegisterPropertyString('Room', '');
         $this->RegisterPropertyString('Trade', '');
+        $this->RegisterPropertyInteger('ManagedBuildingRoot', 58840);
         $this->RegisterPropertyString('Links', '[]');
     }
 
@@ -21,7 +22,49 @@ class ManagedDevice extends IPSModule
         parent::ApplyChanges();
         $name = trim($this->ReadPropertyString('DeviceName'));
         if ($name !== '' && IPS_GetName($this->InstanceID) !== $name) IPS_SetName($this->InstanceID,$name);
+        $this->SynchronizePlacement();
         $this->SynchronizeLinks();
+    }
+
+    private function SynchronizePlacement(): void
+    {
+        $floor = trim($this->ReadPropertyString('Floor'));
+        $room = trim($this->ReadPropertyString('Room'));
+        $trade = trim($this->ReadPropertyString('Trade'));
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        // Never move existing instances on upgrade while metadata is incomplete.
+        if ($root <= 0 || $floor === '' || $room === '' || $trade === '') return;
+        if (!IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) return;
+        foreach ([$floor,$room,$trade] as $part) {
+            if ($part === '.' || $part === '..' || strpos($part,'/') !== false || strpos($part,'\\\\') !== false) return;
+        }
+        $parent = $root;
+        foreach ([$floor,$room,$trade] as $part) {
+            $category = 0;
+            foreach (IPS_GetChildrenIDs($parent) as $child) {
+                $obj = IPS_GetObject($child);
+                if ($obj['ObjectType'] === 0 && IPS_GetName($child) === $part) {
+                    $category = $child;
+                    break;
+                }
+            }
+            if ($category === 0) {
+                // Avoid duplicate category names where a non-category object exists.
+                foreach (IPS_GetChildrenIDs($parent) as $child) {
+                    if (IPS_GetName($child) === $part) {
+                        $this->SendDebug('Placement','Name conflict at '. $part,0);
+                        return;
+                    }
+                }
+                $category = IPS_CreateCategory();
+                IPS_SetName($category,$part);
+                IPS_SetParent($category,$parent);
+            }
+            $parent = $category;
+        }
+        if (IPS_GetParent($this->InstanceID) !== $parent) {
+            IPS_SetParent($this->InstanceID,$parent);
+        }
     }
 
     private function SourceVariables(): array
@@ -84,6 +127,7 @@ class ManagedDevice extends IPSModule
                 ['type'=>'ValidationTextBox','name'=>'Floor','caption'=>'Etage'],
                 ['type'=>'ValidationTextBox','name'=>'Room','caption'=>'Raum'],
                 ['type'=>'ValidationTextBox','name'=>'Trade','caption'=>'Gewerk'],
+                ['type'=>'SelectCategory','name'=>'ManagedBuildingRoot','caption'=>'Gebäude-Zielkategorie'],
                 ['type'=>'Label','caption'=>'Links werden unter dieser Geräteinstanz angelegt. Vorhandene Link-IDs bleiben beim Umbenennen erhalten.'],
                 ['type'=>'List','name'=>'Links','caption'=>'Verknüpfte Variablen','rowCount'=>15,'add'=>false,'delete'=>false,
                     'columns'=>[
