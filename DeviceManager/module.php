@@ -371,14 +371,15 @@ class DeviceManager extends IPSModule
         return 0; // refuse writes outside managed building root
     }
 
-    private function FindDeviceDummy($parent, $name)
+    private function FindDeviceDummy($parent, $name, bool $throwOnConflict = true)
     {
         if (!$parent) return 0;
         foreach (IPS_GetChildrenIDs($parent) as $id) {
             $obj = IPS_GetObject($id);
             if ($obj['ObjectType'] !== 1 || $obj['ObjectName'] !== $name) continue;
             if ((IPS_GetInstance($id)['ModuleInfo']['ModuleID'] ?? '') === '{485D0419-BE97-4548-AA9C-C083EB82E61E}') return $id;
-            throw new Exception('Namenskonflikt mit anderer Instanz: ' . $name);
+            if ($throwOnConflict) throw new Exception('Namenskonflikt mit anderer Instanz: ' . $name);
+            return 0;
         }
         return 0;
     }
@@ -708,7 +709,7 @@ class DeviceManager extends IPSModule
         $savedID = (int)($assignment['dummyID'] ?? 0);
         if ($savedID && IPS_ObjectExists($savedID) && IPS_GetParent($savedID) === $trade && IPS_GetObject($savedID)['ObjectType'] === 1) return $savedID;
         foreach (array_unique([$assignment['deviceName'],$device['name']]) as $name) {
-            $found = $this->FindDeviceDummy($trade,$name);
+            $found = $this->FindDeviceDummy($trade,$name,false);
             if ($found) return $found;
         }
         // Recover renamed dummies using their actual linked source variables.
