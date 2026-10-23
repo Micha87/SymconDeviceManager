@@ -21,6 +21,12 @@ class DeviceManager extends IPSModule
         $this->RegisterPropertyString('FilterRoom', 'Alle');
         $this->RegisterPropertyString('FilterType', 'Alle');
         $this->RegisterPropertyString('FilterText', '');
+        foreach (['Floor', 'Room', 'Type', 'Text'] as $field) {
+            $this->RegisterAttributeString('LiveFilter' . $field, '');
+        }
+        $this->RegisterAttributeString('BuildingPlan', '[]');
+        $this->RegisterAttributeString('DraftFloor', '');
+        $this->RegisterAttributeString('DraftRoom', '');
     }
 
     public function ApplyChanges()
@@ -49,10 +55,10 @@ class DeviceManager extends IPSModule
         $floors = array_values(array_unique($floors));
         $rooms = array_values(array_unique($rooms));
         $types = array_values(array_unique($types));
-        $filterFloor = $this->ReadPropertyString('FilterFloor');
-        $filterRoom = $this->ReadPropertyString('FilterRoom');
-        $filterType = $this->ReadPropertyString('FilterType');
-        $filterText = mb_strtolower(trim($this->ReadPropertyString('FilterText')), 'UTF-8');
+        $filterFloor = $this->ReadAttributeString('LiveFilterFloor') ?: $this->ReadPropertyString('FilterFloor');
+        $filterRoom = $this->ReadAttributeString('LiveFilterRoom') ?: $this->ReadPropertyString('FilterRoom');
+        $filterType = $this->ReadAttributeString('LiveFilterType') ?: $this->ReadPropertyString('FilterType');
+        $filterText = mb_strtolower(trim($this->ReadAttributeString('LiveFilterText')), 'UTF-8');
         $filtered = array_values(array_filter($rows, static function ($r) use ($filterFloor, $filterRoom, $filterType, $filterText) {
             if ($filterFloor !== 'Alle' && strpos($r['room'], $filterFloor . '/') !== 0) return false;
             if ($filterRoom !== 'Alle' && $r['room'] !== $filterRoom) return false;
@@ -61,6 +67,14 @@ class DeviceManager extends IPSModule
             return true;
         }));
         $grouped = $this->GroupDevices($filtered);
+        $plan = json_decode($this->ReadAttributeString('BuildingPlan'), true);
+        if (!is_array($plan)) $plan = [];
+        $planRows = [];
+        foreach ($plan as $floor => $roomNames) {
+            if (!is_array($roomNames)) continue;
+            if (count($roomNames) === 0) $planRows[] = ['floor' => $floor, 'room' => '(noch keine Räume)'];
+            foreach ($roomNames as $roomName) $planRows[] = ['floor' => $floor, 'room' => $roomName];
+        }
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
@@ -70,12 +84,29 @@ class DeviceManager extends IPSModule
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
-                ['type' => 'Select', 'name' => 'FilterFloor', 'caption' => 'Filter Etage', 'options' => $selectOptions($floors)],
-                ['type' => 'Select', 'name' => 'FilterRoom', 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms)],
-                ['type' => 'Select', 'name' => 'FilterType', 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types)],
-                ['type' => 'ValidationTextBox', 'name' => 'FilterText', 'caption' => 'Freitext (Name / ID / Funktion)'],
-                ['type' => 'Label', 'caption' => count($filtered) . ' von ' . count($rows) . ' Datenpunkten sichtbar. Filter ändern, Übernehmen und Konfigurator erneut öffnen.'],
+                ['type' => 'Select', 'name' => 'FilterFloor', 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $value);'],
+                ['type' => 'Select', 'name' => 'FilterRoom', 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $value);'],
+                ['type' => 'Select', 'name' => 'FilterType', 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types), 'onChange' => 'SDM_SetLiveFilter($id, "Type", $value);'],
+                ['type' => 'ValidationTextBox', 'name' => 'FilterText', 'caption' => 'Freitext (Name / ID / Funktion)', 'onChange' => 'SDM_SetLiveFilter($id, "Text", $value);'],
+                ['type' => 'Label', 'caption' => count($filtered) . ' von ' . count($rows) . ' Datenpunkten sichtbar. Filter aktualisieren die Ansicht ohne Schließen (Freitext nach Eingabebestätigung).'],
                 ['type' => 'Label', 'caption' => count($grouped) . ' erkannte Gerätegruppen (vorläufig; Zuordnungen prüfen)'],
+                ['type' => 'ExpansionPanel', 'caption' => 'Gebäudeverwaltung (Entwurf, noch keine Objektänderungen)', 'items' => [
+                    ['type' => 'Label', 'caption' => 'Gebäudeplan unabhängig von der bestehenden Struktur bearbeiten. Erst nach späterer Migrationsfreigabe werden Kategorien angelegt.'],
+                    ['type' => 'List', 'name' => 'BuildingPreview', 'caption' => 'Geplante Etagen und Räume',
+                        'rowCount' => 8, 'add' => false, 'delete' => false,
+                        'columns' => [
+                            ['caption' => 'Etage', 'name' => 'floor', 'width' => '180px'],
+                            ['caption' => 'Raum', 'name' => 'room', 'width' => '220px']
+                        ], 'values' => $planRows
+                    ],
+                    ['type' => 'ValidationTextBox', 'name' => 'DraftFloor', 'caption' => 'Etage (z.B. EG)', 'onChange' => 'SDM_SetDraft($id, "Floor", $value);'],
+                    ['type' => 'ValidationTextBox', 'name' => 'DraftRoom', 'caption' => 'Raum (z.B. Wohnzimmer)', 'onChange' => 'SDM_SetDraft($id, "Room", $value);'],
+                    ['type' => 'Button', 'caption' => 'Etage hinzufügen', 'onClick' => 'SDM_EditBuildingPlan($id, "AddFloor");'],
+                    ['type' => 'Button', 'caption' => 'Raum hinzufügen', 'onClick' => 'SDM_EditBuildingPlan($id, "AddRoom");'],
+                    ['type' => 'Button', 'caption' => 'Raum entfernen (Entwurf)', 'onClick' => 'SDM_EditBuildingPlan($id, "RemoveRoom");'],
+                    ['type' => 'Button', 'caption' => 'Etage entfernen (nur wenn leer)', 'onClick' => 'SDM_EditBuildingPlan($id, "RemoveFloor");'],
+                    ['type' => 'Button', 'caption' => 'Bestehende Etagen/Räume importieren (Entwurf)', 'onClick' => 'SDM_ImportBuildingPlan($id);']
+                ]],
                 ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
                     'rowCount' => 12, 'add' => false, 'delete' => false,
                     'columns' => [
@@ -138,6 +169,63 @@ class DeviceManager extends IPSModule
             return;
         }
         throw new Exception('Unknown action: ' . $Ident);
+    }
+
+    public function SetLiveFilter($field, $value)
+    {
+        if (!in_array($field, ['Floor', 'Room', 'Type', 'Text'], true)) throw new Exception('Ungültiger Filter');
+        $this->WriteAttributeString('LiveFilter' . $field, (string) $value);
+        $this->ReloadForm();
+    }
+
+    public function SetDraft($field, $value)
+    {
+        if (!in_array($field, ['Floor', 'Room'], true)) throw new Exception('Ungültiges Feld');
+        $this->WriteAttributeString('Draft' . $field, trim((string) $value));
+    }
+
+    public function ImportBuildingPlan()
+    {
+        $root = $this->ReadPropertyInteger('BuildingRoot');
+        if (!IPS_ObjectExists($root)) throw new Exception('Gebäude-Kategorie fehlt');
+        $plan = [];
+        foreach (IPS_GetChildrenIDs($root) as $floorID) {
+            $floor = IPS_GetObject($floorID);
+            if ($floor['ObjectType'] !== 0) continue;
+            $floorName = $floor['ObjectName'];
+            $plan[$floorName] = [];
+            foreach (IPS_GetChildrenIDs($floorID) as $roomID) {
+                $room = IPS_GetObject($roomID);
+                if ($room['ObjectType'] === 0) $plan[$floorName][] = $room['ObjectName'];
+            }
+        }
+        $this->WriteAttributeString('BuildingPlan', json_encode($plan, JSON_UNESCAPED_UNICODE));
+        $this->ReloadForm();
+    }
+
+    public function EditBuildingPlan($action)
+    {
+        $plan = json_decode($this->ReadAttributeString('BuildingPlan'), true);
+        if (!is_array($plan)) $plan = [];
+        $floor = $this->ReadAttributeString('DraftFloor');
+        $room = $this->ReadAttributeString('DraftRoom');
+        if ($floor === '') throw new Exception('Bitte Etage eingeben');
+        if ($action === 'AddFloor') {
+            if (!isset($plan[$floor])) $plan[$floor] = [];
+        } elseif ($action === 'RemoveFloor') {
+            if (isset($plan[$floor]) && count($plan[$floor]) === 0) unset($plan[$floor]);
+            else throw new Exception('Etage fehlt oder enthält noch Räume');
+        } else {
+            if ($room === '') throw new Exception('Bitte Raum eingeben');
+            if (!isset($plan[$floor])) throw new Exception('Etage zuerst anlegen');
+            if ($action === 'AddRoom') {
+                if (!in_array($room, $plan[$floor], true)) $plan[$floor][] = $room;
+            } elseif ($action === 'RemoveRoom') {
+                $plan[$floor] = array_values(array_filter($plan[$floor], static function ($r) use ($room) { return $r !== $room; }));
+            } else throw new Exception('Unbekannte Aktion');
+        }
+        $this->WriteAttributeString('BuildingPlan', json_encode($plan, JSON_UNESCAPED_UNICODE));
+        $this->ReloadForm();
     }
 
     public function GetPreviewJSON()
