@@ -500,7 +500,7 @@ class DeviceManager extends IPSModule
                 'onEdit'=>'SDM_SaveDialogVariableSelection($id, '.$deviceID.', json_encode($selectedVariables));',
                 'columns'=>[
                     ['caption'=>'Verlinken','name'=>'enabled','width'=>'95px','edit'=>['type'=>'CheckBox']],
-                    ['caption'=>'Variable','name'=>'name','width'=>'auto','save'=>true],
+                    ['caption'=>'Linkname','name'=>'name','width'=>'auto','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
                     ['caption'=>'ID','name'=>'variableID','width'=>'90px','save'=>true]
                 ],
                 'values'=>$this->DeviceDialogVariables($deviceID)],
@@ -521,7 +521,21 @@ class DeviceManager extends IPSModule
             $varID = (int)($row['variableID'] ?? 0);
             if (!in_array($varID,$valid,true)) continue;
             $this->SetDeviceVariable($deviceID,$varID,!empty($row['enabled']));
+            if (isset($row['name']) && is_string($row['name'])) $this->SetDeviceLinkName($deviceID,$varID,$row['name']);
         }
+    }
+
+    public function SetDeviceLinkName(int $deviceID, int $variableID, string $name)
+    {
+        $name = trim($name);
+        if ($name === '' || mb_strlen($name,'UTF-8') > 100) throw new Exception('Linkname muss 1 bis 100 Zeichen enthalten.');
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID]) || !in_array($variableID,array_values($devices[(string)$deviceID]['functions']),true)) throw new Exception('Ungültige Quellvariable.');
+        $all = json_decode($this->ReadAttributeString('DeviceAssignments'),true);
+        if (!is_array($all)) $all = [];
+        if (!isset($all[(string)$deviceID])) $all[(string)$deviceID] = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
+        $all[(string)$deviceID]['linkNames'][(string)$variableID] = $name;
+        $this->WriteAttributeString('DeviceAssignments',json_encode($all,JSON_UNESCAPED_UNICODE));
     }
 
     public function CreateConfiguredDevice(int $deviceID)
@@ -559,7 +573,7 @@ class DeviceManager extends IPSModule
             if (!$link) {
                 $link = IPS_CreateLink();
                 IPS_SetParent($link,$dummy);
-                IPS_SetName($link,$function);
+                IPS_SetName($link,$a['linkNames'][(string)$variableID] ?? ($function === 'Wert' ? IPS_GetName($variableID) : $function));
             }
             IPS_SetLinkTargetID($link,$variableID);
         }
@@ -575,7 +589,7 @@ class DeviceManager extends IPSModule
         foreach ($devices[(string)$deviceID]['functions'] as $function=>$variableID) {
             if (!IPS_ObjectExists($variableID)) continue;
             $rows[] = ['enabled'=>array_key_exists((string)$variableID,$a['variables']) ? (bool)$a['variables'][(string)$variableID] : true,
-                'name'=>$function . ' – ' . IPS_GetName($variableID),'variableID'=>(int)$variableID];
+                'name'=>$a['linkNames'][(string)$variableID] ?? ($function === 'Wert' ? IPS_GetName($variableID) : $function),'variableID'=>(int)$variableID];
         }
         return $rows;
     }
