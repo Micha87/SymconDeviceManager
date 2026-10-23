@@ -1,6 +1,6 @@
 <?php
 /**
- * Symcon Device Manager 0.2 - discovery and explicit category management.
+ * Symcon Device Manager 0.3 - discovery and explicit category management.
  * Discovers hardware datapoints and proposes room/device/function mappings.
  * Only explicitly requested new-building category creation is permitted; no moves, links or hardware commands.
  */
@@ -30,6 +30,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('DraftRoom', '');
         $this->RegisterAttributeString('ImportSelections', '{}');
         $this->RegisterAttributeBoolean('ShowImportedRooms', false);
+        $this->RegisterAttributeString('DeviceSelections', '{}');
     }
 
     public function ApplyChanges()
@@ -80,6 +81,7 @@ class DeviceManager extends IPSModule
             foreach ($roomNames as $roomName) $planRows[] = ['floor' => $floor, 'room' => $roomName];
         }
         $importItems = $this->BuildImportControls();
+        $deviceItems = $this->BuildDeviceImportControls();
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
@@ -124,6 +126,12 @@ class DeviceManager extends IPSModule
                         ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
                     ])]
                 ]],
+                ['type' => 'ExpansionPanel', 'caption' => 'Geräteübernahme – KNX Wohnzimmer (Vorschau und Auswahl)', 'items' => array_merge([
+                    ['type' => 'Label', 'caption' => 'Quelle: Hardware/KNX/Beleuchtung/Wohnzimmer (57856). Ziel: Gebäude_neu/EG/Wohnzimmer/Beleuchtung. Hardware wird nicht verändert.'],
+                    ['type' => 'Button', 'caption' => 'Geräte neu erkennen', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);']
+                ], $deviceItems, [
+                    ['type' => 'Button', 'caption' => 'Ausgewählte Geräte als Dummys und Links anlegen', 'onClick' => 'SDM_ApplyDeviceSelection($id);']
+                ])],
                 ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
                     'rowCount' => 12, 'add' => false, 'delete' => false,
                     'columns' => [
@@ -251,6 +259,137 @@ class DeviceManager extends IPSModule
             } else throw new Exception('Unbekannte Aktion');
         }
         $this->WriteAttributeString('BuildingPlan', json_encode($plan, JSON_UNESCAPED_UNICODE));
+        $this->ReloadForm();
+    }
+
+    /**
+     * KNX pilot: existing direct KNX instances and grouped instances below
+     * Hardware/KNX/Beleuchtung/Wohnzimmer. No script/function folder import.
+     */
+    private function DiscoverPilotDevices()
+    {
+        $root = 57856;
+        if (!IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) return [];
+        $devices = [];
+        foreach (IPS_GetChildrenIDs($root) as $id) {
+            $obj = IPS_GetObject($id);
+            if ($obj['ObjectType'] !== 1) continue;
+            $isDummy = (IPS_GetInstance($id)['ModuleInfo']['ModuleID'] ?? '') === '{485D0419-BE97-4548-AA9C-C083EB82E61E}';
+            $name = $isDummy ? $obj['ObjectName'] : preg_replace('/_(s|d|w)$/iu', '', $obj['ObjectName']);
+            $members = $isDummy ? IPS_GetChildrenIDs($id) : [$id];
+            $functions = [];
+            foreach ($members as $member) {
+                if (IPS_GetObject($member)['ObjectType'] !== 1) continue;
+                $instanceName = IPS_GetName($member);
+                $function = 'Wert';
+                if (preg_match('/_s$/iu', $instanceName)) $function = 'Schalten';
+                elseif (preg_match('/_w$/iu', $instanceName)) $function = 'Status';
+                elseif (preg_match('/_d$/iu', $instanceName)) $function = 'Dimmen';
+                foreach (IPS_GetChildrenIDs($member) as $variableID) {
+                    if (IPS_GetObject($variableID)['ObjectType'] !== 2) continue;
+                    $label = $function;
+                    if (isset($functions[$label])) $label .= ' ' . $variableID;
+                    $functions[$label] = $variableID;
+                }
+            }
+            if (!$functions) continue;
+            $devices[(string) $id] = ['name' => $name, 'functions' => $functions];
+        }
+        return $devices;
+    }
+
+    private function GetPilotTarget()
+    {
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        if ($root <= 0 || !IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) return 0;
+        $floor = $this->FindCategoryByName($root, 'EG');
+        $room = $floor ? $this->FindCategoryByName($floor, 'Wohnzimmer') : 0;
+        return $room ? $this->FindCategoryByName($room, 'Beleuchtung') : 0;
+    }
+
+    private function FindDeviceDummy($parent, $name)
+    {
+        if (!$parent) return 0;
+        foreach (IPS_GetChildrenIDs($parent) as $id) {
+            $obj = IPS_GetObject($id);
+            if ($obj['ObjectType'] !== 1 || $obj['ObjectName'] !== $name) continue;
+            if ((IPS_GetInstance($id)['ModuleInfo']['ModuleID'] ?? '') === '{485D0419-BE97-4548-AA9C-C083EB82E61E}') return $id;
+            throw new Exception('Namenskonflikt mit anderer Instanz: ' . $name);
+        }
+        return 0;
+    }
+
+    private function BuildDeviceImportControls()
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $target = $this->GetPilotTarget();
+        $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
+        if (!is_array($selected)) $selected = [];
+        $controls = [];
+        if (!$target) $controls[] = ['type' => 'Label', 'caption' => 'Ziel EG/Wohnzimmer/Beleuchtung fehlt. Bitte erst Gebäudestruktur anlegen.'];
+        foreach ($devices as $id => $device) {
+            $dummy = $target ? $this->FindDeviceDummy($target, $device['name']) : 0;
+            $functions = implode(', ', array_map(static function ($name, $variable) {
+                return $name . ' → ' . $variable;
+            }, array_keys($device['functions']), array_values($device['functions'])));
+            $caption = $device['name'] . ' [' . $functions . ']';
+            if ($dummy) {
+                $controls[] = ['type' => 'Label', 'caption' => '✓ ' . $caption . ' (Dummy vorhanden: ' . $dummy . ')'];
+            } else {
+                $controls[] = [
+                    'type' => 'CheckBox', 'name' => 'DeviceSelect_' . $id,
+                    'caption' => $caption, 'value' => !empty($selected[$id]),
+                    'onChange' => 'SDM_SetDeviceSelection($id, ' . $id . ', $DeviceSelect_' . $id . ');'
+                ];
+            }
+        }
+        if (!$devices) $controls[] = ['type' => 'Label', 'caption' => 'Keine Geräte unter Hardware-Kategorie 57856 erkannt.'];
+        return $controls;
+    }
+
+    public function SetDeviceSelection($deviceID, $enabled)
+    {
+        $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
+        if (!is_array($selected)) $selected = [];
+        if ($enabled) $selected[(string) $deviceID] = true;
+        else unset($selected[(string) $deviceID]);
+        $this->WriteAttributeString('DeviceSelections', json_encode($selected));
+    }
+
+    public function ApplyDeviceSelection()
+    {
+        $target = $this->GetPilotTarget();
+        if (!$target) throw new Exception('Ziel EG/Wohnzimmer/Beleuchtung fehlt.');
+        $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
+        if (!is_array($selected) || !$selected) throw new Exception('Bitte mindestens ein Gerät auswählen.');
+        $devices = $this->DiscoverPilotDevices();
+        foreach (array_keys($selected) as $id) {
+            if (!isset($devices[$id])) continue;
+            $device = $devices[$id];
+            $dummy = $this->FindDeviceDummy($target, $device['name']);
+            if (!$dummy) {
+                $dummy = IPS_CreateInstance('{485D0419-BE97-4548-AA9C-C083EB82E61E}');
+                IPS_SetParent($dummy, $target);
+                IPS_SetName($dummy, $device['name']);
+            }
+            foreach ($device['functions'] as $function => $variableID) {
+                if (!IPS_ObjectExists($variableID) || IPS_GetObject($variableID)['ObjectType'] !== 2) continue;
+                $link = 0;
+                foreach (IPS_GetChildrenIDs($dummy) as $childID) {
+                    if (IPS_GetObject($childID)['ObjectType'] === 6 && IPS_GetName($childID) === $function) {
+                        $link = $childID;
+                        break;
+                    }
+                }
+                if (!$link) {
+                    $link = IPS_CreateLink();
+                    IPS_SetParent($link, $dummy);
+                    IPS_SetName($link, $function);
+                }
+                IPS_SetLinkTargetID($link, $variableID);
+            }
+        }
+        $this->WriteAttributeString('DeviceSelections', '{}');
         $this->ReloadForm();
     }
 
