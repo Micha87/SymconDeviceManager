@@ -556,7 +556,7 @@ class DeviceManager extends IPSModule
             $aliasTrade = ['Beleuchtung'=>'Bel.', 'Heizung'=>'Hzg.', 'Rollladen'=>'Rol.', 'Multimedia'=>'Med.', 'Steckdosen'=>'Steck.', 'Sensoren'=>'Sens.', 'Sonstige'=>'Sonst.'];
             $aliasRoom = ['Wohnzimmer'=>'Wohn.', 'Schlafzimmer'=>'Schlaf.', 'Wintergarten'=>'Winterg.', 'Küche'=>'Kü.', 'Badezimmer'=>'Bad.', 'Kinderzimmer'=>'Kind.'];
             $alias = ($aliasTrade[$a['trade']] ?? $a['trade']).'/'.$a['floor'].'/'.($aliasRoom[$a['room']] ?? $a['room']).'/';
-            $rows[] = ['deviceID'=>(int)$id, 'alias'=>$alias, 'name'=>$device['name'], 'room'=>$a['floor'].' / '.$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
+            $rows[] = ['deviceID'=>(int)$id, 'alias'=>$alias, 'name'=>$device['name'], 'room'=>$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
         }
         return ['type'=>'List','name'=>'ExistingDevices','caption'=>'Bereits angelegte Geräte – Variablenbestand','rowCount'=>10,'add'=>false,'delete'=>false,
             'form'=>'return SDM_GetExistingDeviceDialogForm($id, (int)($ExistingDevices["deviceID"] ?? 0));',
@@ -584,21 +584,22 @@ class DeviceManager extends IPSModule
         if (!$dummy) return [['type'=>'Label','caption'=>'Dummy nicht mehr vorhanden']];
         $linked = [];
         foreach (IPS_GetChildrenIDs($dummy) as $child) {
-            if (IPS_GetObject($child)['ObjectType'] === 6) $linked[IPS_GetLink($child)['TargetID']] = true;
+            if (IPS_GetObject($child)['ObjectType'] === 6) $linked[IPS_GetLink($child)['TargetID']] = $child;
         }
         $rows = [];
         foreach ($device['functions'] as $function=>$variableID) {
             $rows[] = ['enabled'=>isset($linked[$variableID]),'name'=>$function.' – '.IPS_GetName($variableID),'variableID'=>(int)$variableID,
                 'source'=>$variableID.' · '.IPS_GetName($variableID),
-                'target'=>isset($linked[$variableID]) ? 'Link vorhanden' : 'Noch nicht verlinkt'];
+                'target'=>isset($linked[$variableID]) ? (string)$linked[$variableID].' · '.IPS_GetName($linked[$variableID]) : 'Nicht verlinkt'];
         }
         $form = $this->GetDeviceDialogForm($deviceID);
         $form[0] = ['type'=>'Label','caption'=>'Gerät: '.$device['name'].' ('.$deviceID.') | Dummy: '.$dummy];
         $form[4]['values'] = $rows;
         $form[4]['columns'] = [
-            ['caption'=>'Verlinken','name'=>'enabled','width'=>'95px','edit'=>['type'=>'CheckBox']],
-            ['caption'=>'Variable','name'=>'name','width'=>'auto','save'=>true],
-            ['caption'=>'ID','name'=>'variableID','width'=>'90px','save'=>true]
+            ['caption'=>'Verlinken','name'=>'enabled','width'=>'80px','edit'=>['type'=>'CheckBox']],
+            ['caption'=>'Variable','name'=>'name','width'=>'30%','save'=>true],
+            ['caption'=>'Quelle (ID / Name)','name'=>'source','width'=>'30%'],
+            ['caption'=>'Ziel-Link (ID / Name)','name'=>'target','width'=>'30%']
         ];
         array_splice($form,1,0,[
             ['type'=>'Label','caption'=>'Quelle: '.$device['path'].' / '.$device['name']],
