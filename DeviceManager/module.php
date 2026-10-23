@@ -17,6 +17,10 @@ class DeviceManager extends IPSModule
             'luise' => 'OG/Luise', 'lotta' => 'OG/Lotta'
         ], JSON_UNESCAPED_UNICODE));
         $this->RegisterAttributeString('LastScan', '[]');
+        $this->RegisterPropertyString('FilterFloor', 'Alle');
+        $this->RegisterPropertyString('FilterRoom', 'Alle');
+        $this->RegisterPropertyString('FilterType', 'Alle');
+        $this->RegisterPropertyString('FilterText', '');
     }
 
     public function ApplyChanges()
@@ -31,15 +35,49 @@ class DeviceManager extends IPSModule
         if (!is_array($rows)) {
             $rows = [];
         }
+        $floors = ['Alle'];
+        $rooms = ['Alle'];
+        $types = ['Alle'];
+        foreach ($rows as $r) {
+            $parts = explode('/', $r['room']);
+            if ($r['room'] !== 'Nicht zugeordnet') {
+                $floors[] = $parts[0];
+                $rooms[] = $r['room'];
+            }
+            $types[] = $r['deviceType'] ?? 'Sonstige';
+        }
+        $floors = array_values(array_unique($floors));
+        $rooms = array_values(array_unique($rooms));
+        $types = array_values(array_unique($types));
+        $filterFloor = $this->ReadPropertyString('FilterFloor');
+        $filterRoom = $this->ReadPropertyString('FilterRoom');
+        $filterType = $this->ReadPropertyString('FilterType');
+        $filterText = mb_strtolower(trim($this->ReadPropertyString('FilterText')), 'UTF-8');
+        $filtered = array_values(array_filter($rows, static function ($r) use ($filterFloor, $filterRoom, $filterType, $filterText) {
+            if ($filterFloor !== 'Alle' && strpos($r['room'], $filterFloor . '/') !== 0) return false;
+            if ($filterRoom !== 'Alle' && $r['room'] !== $filterRoom) return false;
+            if ($filterType !== 'Alle' && ($r['deviceType'] ?? 'Sonstige') !== $filterType) return false;
+            if ($filterText !== '' && mb_strpos(mb_strtolower(implode(' ', $r), 'UTF-8'), $filterText) === false) return false;
+            return true;
+        }));
+        $selectOptions = static function ($items) {
+            return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
+        };
         return json_encode([
             'elements' => [
                 ['type' => 'Label', 'caption' => 'Prototyp 0.1: Nur lesen und Zuordnungen vorschlagen. Keine Änderungen an Objekten.'],
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
-                ['type' => 'List', 'name' => 'Preview', 'caption' => 'Erkannte Datenpunkte',
+                ['type' => 'Select', 'name' => 'FilterFloor', 'caption' => 'Filter Etage', 'options' => $selectOptions($floors)],
+                ['type' => 'Select', 'name' => 'FilterRoom', 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms)],
+                ['type' => 'Select', 'name' => 'FilterType', 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types)],
+                ['type' => 'ValidationTextBox', 'name' => 'FilterText', 'caption' => 'Freitext (Name / ID / Funktion)'],
+                ['type' => 'Label', 'caption' => count($filtered) . ' von ' . count($rows) . ' Datenpunkten sichtbar. Filter ändern, Übernehmen und Konfigurator erneut öffnen.'],
+                ['type' => 'List', 'name' => 'Preview', 'caption' => 'Gefilterte Datenpunkte',
                     'rowCount' => 15, 'add' => false, 'delete' => false, 'sort' => ['column' => 'room', 'direction' => 'ascending'],
                     'columns' => [
+                        ['caption' => 'Typ', 'name' => 'deviceType', 'width' => '110px'],
                         ['caption' => 'Raumvorschlag', 'name' => 'room', 'width' => '160px'],
                         ['caption' => 'Gerätevorschlag', 'name' => 'device', 'width' => '230px'],
                         ['caption' => 'Funktion', 'name' => 'function', 'width' => '120px'],
@@ -47,7 +85,7 @@ class DeviceManager extends IPSModule
                         ['caption' => 'Variable', 'name' => 'variable', 'width' => '80px'],
                         ['caption' => 'Sicherheit', 'name' => 'confidence', 'width' => '90px']
                     ],
-                    'values' => $rows
+                    'values' => $filtered
                 ]
             ],
             'actions' => [
@@ -96,6 +134,7 @@ class DeviceManager extends IPSModule
                     }
                     $rows[] = [
                         'room' => $parsed['room'],
+                        'deviceType' => $this->GuessType($name),
                         'device' => $parsed['device'],
                         'function' => $parsed['function'] !== 'Unbekannt' ? $parsed['function'] : $child['ObjectName'],
                         'instance' => (string) $id,
@@ -111,6 +150,17 @@ class DeviceManager extends IPSModule
                 $this->ScanBranch($id, $aliases, $rows, $depth + 1);
             }
         }
+    }
+
+    private function GuessType($name)
+    {
+        $name = mb_strtolower($name, 'UTF-8');
+        if (preg_match('/(bel\\.|licht|lampe|strahler|wled|dimmer)/u', $name)) return 'Beleuchtung';
+        if (preg_match('/(roll|jalous|shutter|blind)/u', $name)) return 'Rollladen';
+        if (preg_match('/(hzg|heizung|thermostat|temperatur)/u', $name)) return 'Heizung';
+        if (preg_match('/(steckdose|socket|plug)/u', $name)) return 'Steckdose';
+        if (preg_match('/(sensor|bewegung|präsenz|kontakt)/u', $name)) return 'Sensor';
+        return 'Sonstige';
     }
 
     private function ParseName($name, $aliases)
