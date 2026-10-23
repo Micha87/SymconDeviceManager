@@ -584,13 +584,13 @@ class DeviceManager extends IPSModule
 
     private function EffectiveLinkName(array $assignment, int $variableID, string $function): string
     {
-        $suggested = $this->SuggestedLinkName($function,$variableID);
-        $stored = trim((string)($assignment['linkNames'][(string)$variableID] ?? ''));
-        if ($stored === '') return $suggested;
         $source = trim(IPS_GetName($variableID));
-        // Older dialog versions stored the technical function label together with
-        // the source name. Treat only these exact legacy defaults as suggestions.
-        if ($source !== '' && preg_match('/^Wert(?:\\s+\\d+)?\\s*[–-]\\s*'.preg_quote($source,'/').'$/iu',$stored)) return $suggested;
+        $stored = trim((string)($assignment['linkNames'][(string)$variableID] ?? ''));
+        if ($stored === '') return $this->SuggestedLinkName($function,$variableID);
+        // Legacy values were persisted as "Wert [ID] – <source name>".
+        // Only normalize when the suffix is exactly the current source name.
+        if ($source !== '' && preg_match('/^Wert(?:\\s+\\d+)?\\s*[–—-]\\s*(.+)$/iu',$stored,$m)
+            && trim($m[1]) === $source) return $source;
         return $stored;
     }
 
