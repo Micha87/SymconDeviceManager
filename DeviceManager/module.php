@@ -1113,6 +1113,14 @@ class DeviceManager extends IPSModule
         foreach ($devices as $id => $device) {
             $a = $this->DeviceAssignment((int)$id,$device);
             $dummy = $this->ManagedDummyID((int)$id,$device,$a);
+            $nativeInstance = 0;
+            foreach (IPS_GetInstanceListByModuleID('{7C91D1A2-29C9-4DF7-86BD-BB23E4795C71}') as $managedID) {
+                $settings = json_decode(IPS_GetConfiguration($managedID),true);
+                if ((int)($settings['SourceInstanceID'] ?? 0) === (int)$id) {
+                    $nativeInstance = (int)$managedID;
+                    break;
+                }
+            }
             $haystack = $device['name'].' '.$device['path'].' '.$id.' '.$a['floor'].' '.$a['room'].' '.$a['trade'];
             if ($search !== '' && mb_stripos($haystack,$search,0,'UTF-8') === false) continue;
             $rows[] = [
