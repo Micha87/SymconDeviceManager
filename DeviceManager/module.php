@@ -41,6 +41,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('DeviceListSearch', '');
         $this->RegisterAttributeString('ExistingDeviceSearch', '');
         $this->RegisterAttributeString('SeenSourceDevices', '[]');
+        $this->RegisterAttributeBoolean('ShowSeenSourceDevices', false);
         $this->RegisterAttributeInteger('ManageDeviceID', 0);
         $this->RegisterAttributeString('ManagedEditDraft', '{}');
         $this->RegisterAttributeString('HardwareSwapDraft', '{}');
@@ -141,6 +142,7 @@ class DeviceManager extends IPSModule
                 $deviceSearch,
                 $draftList,
                 ['type'=>'Button','caption'=>'Alles gesehen','onClick'=>'SDM_MarkAllSourceDevicesSeen($id);'],
+                ['type'=>'Button','caption'=>'Gesehene einblenden','onClick'=>'SDM_ShowSeenSourceDevices($id);'],
                 ['type'=>'ValidationTextBox','name'=>'ExistingDeviceSearch','caption'=>'Angelegte Geräte filtern (Volltext)','value'=>$this->ReadAttributeString('ExistingDeviceSearch'),'onChange'=>'SDM_SetExistingDeviceSearch($id, $ExistingDeviceSearch);'],
                 $this->BuildExistingDeviceList()
             ],
@@ -1090,6 +1092,7 @@ class DeviceManager extends IPSModule
         $hidden = 0;
         $seen = json_decode($this->ReadAttributeString('SeenSourceDevices'),true);
         if (!is_array($seen)) $seen = [];
+        $showSeen = $this->ReadAttributeBoolean('ShowSeenSourceDevices');
         $search = trim($this->ReadAttributeString('DeviceListSearch'));
         $deviceOptions = [['caption' => 'Gerät auswählen', 'value' => 0]];
         $floorOptions = [['caption' => 'Etage wählen', 'value' => '']];
@@ -1102,7 +1105,7 @@ class DeviceManager extends IPSModule
         foreach ($devices as $id => $device) {
             $a = $this->DeviceAssignment($id, $device);
             $managedDummy = $this->ManagedDummyID((int)$id,$device,$a);
-            if (in_array((int)$id,$seen,true)) { $hidden++; continue; }
+            if (in_array((int)$id,$seen,true) && !$showSeen) { $hidden++; continue; }
             $allLinked = count($device['functions']) > 0;
             foreach ($device['functions'] as $variableID) {
                 if (!isset($linked[$variableID])) { $allLinked = false; break; }
@@ -1155,6 +1158,13 @@ class DeviceManager extends IPSModule
             $seen[] = (int)$id;
         }
         $this->WriteAttributeString('SeenSourceDevices',json_encode(array_values(array_unique($seen))));
+        $this->WriteAttributeBoolean('ShowSeenSourceDevices',false);
+        $this->ReloadForm();
+    }
+
+    public function ShowSeenSourceDevices()
+    {
+        $this->WriteAttributeBoolean('ShowSeenSourceDevices',!$this->ReadAttributeBoolean('ShowSeenSourceDevices'));
         $this->ReloadForm();
     }
 
