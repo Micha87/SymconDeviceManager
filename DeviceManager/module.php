@@ -1,6 +1,6 @@
 <?php
 /**
- * Symcon Device Manager 0.1 - read-only prototype.
+ * Symcon Device Manager 0.2 - read-only grouping prototype.
  * Discovers hardware datapoints and proposes room/device/function mappings.
  * No object writes, moves, links, or hardware commands are performed.
  */
@@ -60,12 +60,13 @@ class DeviceManager extends IPSModule
             if ($filterText !== '' && mb_strpos(mb_strtolower(implode(' ', $r), 'UTF-8'), $filterText) === false) return false;
             return true;
         }));
+        $grouped = $this->GroupDevices($filtered);
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
         return json_encode([
             'elements' => [
-                ['type' => 'Label', 'caption' => 'Prototyp 0.1: Nur lesen und Zuordnungen vorschlagen. Keine Änderungen an Objekten.'],
+                ['type' => 'Label', 'caption' => 'Prototyp 0.2: Hardware und Bestandsstruktur lesen, Geräte gruppieren. Keine Objektänderungen.'],
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
@@ -74,6 +75,19 @@ class DeviceManager extends IPSModule
                 ['type' => 'Select', 'name' => 'FilterType', 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types)],
                 ['type' => 'ValidationTextBox', 'name' => 'FilterText', 'caption' => 'Freitext (Name / ID / Funktion)'],
                 ['type' => 'Label', 'caption' => count($filtered) . ' von ' . count($rows) . ' Datenpunkten sichtbar. Filter ändern, Übernehmen und Konfigurator erneut öffnen.'],
+                ['type' => 'Label', 'caption' => count($grouped) . ' erkannte Gerätegruppen (vorläufig; Zuordnungen prüfen)'],
+                ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
+                    'rowCount' => 12, 'add' => false, 'delete' => false,
+                    'columns' => [
+                        ['caption' => 'Raum', 'name' => 'room', 'width' => '150px'],
+                        ['caption' => 'Typ', 'name' => 'deviceType', 'width' => '110px'],
+                        ['caption' => 'Gerät', 'name' => 'device', 'width' => '240px'],
+                        ['caption' => 'Funktionen', 'name' => 'functions', 'width' => '230px'],
+                        ['caption' => 'Variablen', 'name' => 'count', 'width' => '90px'],
+                        ['caption' => 'Instanz-IDs', 'name' => 'instances', 'width' => '160px']
+                    ],
+                    'values' => $grouped
+                ],
                 ['type' => 'List', 'name' => 'Preview', 'caption' => 'Gefilterte Datenpunkte',
                     'rowCount' => 15, 'add' => false, 'delete' => false, 'sort' => ['column' => 'room', 'direction' => 'ascending'],
                     'columns' => [
@@ -83,7 +97,7 @@ class DeviceManager extends IPSModule
                         ['caption' => 'Funktion', 'name' => 'function', 'width' => '120px'],
                         ['caption' => 'Instanz', 'name' => 'instance', 'width' => '80px'],
                         ['caption' => 'Variable', 'name' => 'variable', 'width' => '80px'],
-                        ['caption' => 'Sicherheit', 'name' => 'confidence', 'width' => '90px']
+                        ['caption' => 'Zuordnungsqualität', 'name' => 'confidence', 'width' => '90px']
                     ],
                     'values' => $filtered
                 ]
@@ -106,7 +120,12 @@ class DeviceManager extends IPSModule
             throw new Exception('RoomAliases muss ein JSON-Objekt sein.');
         }
         $rows = [];
-        $this->ScanBranch($root, $aliases, $rows, 0);
+        $seen = [];
+        $this->ScanBranch($root, $aliases, $rows, 0, null, $seen);
+        $building = $this->ReadPropertyInteger('BuildingRoot');
+        if ($building > 0 && IPS_ObjectExists($building) && $building !== $root) {
+            $this->ScanBranch($building, $aliases, $rows, 0, null, $seen);
+        }
         $this->WriteAttributeString('LastScan', json_encode($rows, JSON_UNESCAPED_UNICODE));
         $this->SendDebug('Scan', count($rows) . ' Kandidaten', 0);
         return count($rows);
@@ -117,16 +136,23 @@ class DeviceManager extends IPSModule
         return $this->ReadAttributeString('LastScan');
     }
 
-    private function ScanBranch($parent, $aliases, &$rows, $depth)
+    private function ScanBranch($parent, $aliases, &$rows, $depth, $roomPath, &$seen)
     {
         if ($depth > 20 || count($rows) >= 2000) {
             return;
         }
         foreach (IPS_GetChildrenIDs($parent) as $id) {
+            if (count($rows) >= 4000) return;
             $object = IPS_GetObject($id);
-            if ($object['ObjectType'] === 1) {
+            $pathRoom = $this->RoomFromPath($id);
+            if ($object['ObjectType'] === 1 && !isset($seen[$id])) {
+                $seen[$id] = true;
                 $name = $object['ObjectName'];
                 $parsed = $this->ParseName($name, $aliases);
+                if ($pathRoom !== null) {
+                    $parsed['room'] = $pathRoom;
+                    $parsed['confidence'] = 'Hoch (Pfad)';
+                }
                 foreach (IPS_GetChildrenIDs($id) as $childID) {
                     $child = IPS_GetObject($childID);
                     if ($child['ObjectType'] !== 2) {
@@ -147,9 +173,57 @@ class DeviceManager extends IPSModule
                 }
             }
             if ($object['ObjectType'] === 0 || $object['ObjectType'] === 1) {
-                $this->ScanBranch($id, $aliases, $rows, $depth + 1);
+                $this->ScanBranch($id, $aliases, $rows, $depth + 1, $pathRoom ?? $roomPath, $seen);
             }
         }
+    }
+
+    private function RoomFromPath($id)
+    {
+        $root = $this->ReadPropertyInteger('BuildingRoot');
+        $parts = [];
+        $current = $id;
+        for ($i = 0; $i < 24 && $current > 0 && IPS_ObjectExists($current); $i++) {
+            if ($current === $root) break;
+            $o = IPS_GetObject($current);
+            array_unshift($parts, $o['ObjectName']);
+            $current = $o['ParentID'];
+        }
+        if ($current !== $root || count($parts) < 3) return null;
+        $floor = $parts[0];
+        $room = $parts[1];
+        if (in_array($room, ['Allgemein', 'Erweiterte Lichtsteuerung'], true)) return null;
+        return $floor . '/' . $room;
+    }
+
+    private function GroupDevices($rows)
+    {
+        $groups = [];
+        foreach ($rows as $r) {
+            $name = preg_replace('/_(s|d|w)$/iu', '', $r['device']);
+            $name = preg_replace('/^(Bel|HZG|Rollo|Rolladen)[.\\-_ ]+/iu', '', $name);
+            $name = preg_replace('/^(Wz|Wohnzim|Kü|Kueche|Küche)[.\\-_ ]+/iu', '', $name);
+            $key = mb_strtolower($r['room'] . '|' . $r['deviceType'] . '|' . $name, 'UTF-8');
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'room' => $r['room'], 'deviceType' => $r['deviceType'],
+                    'device' => $name, 'functions' => [], 'count' => 0, 'instances' => []
+                ];
+            }
+            $groups[$key]['count']++;
+            $groups[$key]['functions'][$r['function']] = true;
+            $groups[$key]['instances'][$r['instance']] = true;
+        }
+        $result = [];
+        foreach ($groups as $g) {
+            $g['functions'] = implode(', ', array_keys($g['functions']));
+            $g['instances'] = implode(', ', array_keys($g['instances']));
+            $result[] = $g;
+        }
+        usort($result, static function ($a, $b) {
+            return strcmp($a['room'] . $a['device'], $b['room'] . $b['device']);
+        });
+        return $result;
     }
 
     private function GuessType($name)
