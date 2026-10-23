@@ -556,17 +556,18 @@ class DeviceManager extends IPSModule
             $aliasTrade = ['Beleuchtung'=>'Bel.', 'Heizung'=>'Hzg.', 'Rollladen'=>'Rol.', 'Multimedia'=>'Med.', 'Steckdosen'=>'Steck.', 'Sensoren'=>'Sens.', 'Sonstige'=>'Sonst.'];
             $aliasRoom = ['Wohnzimmer'=>'Wohn.', 'Schlafzimmer'=>'Schlaf.', 'Wintergarten'=>'Winterg.', 'Küche'=>'Kü.', 'Badezimmer'=>'Bad.', 'Kinderzimmer'=>'Kind.'];
             $alias = ($aliasTrade[$a['trade']] ?? $a['trade']).'/'.$a['floor'].'/'.($aliasRoom[$a['room']] ?? $a['room']).'/';
-            $rows[] = ['deviceID'=>(int)$id, 'alias'=>$alias, 'name'=>$device['name'], 'room'=>$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
+            $rows[] = ['deviceID'=>(int)$id, 'alias'=>$alias, 'name'=>$device['name'], 'floor'=>$a['floor'], 'room'=>$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
         }
-        return ['type'=>'List','name'=>'ExistingDevices','caption'=>'Bereits angelegte Geräte – Variablenbestand','rowCount'=>10,'add'=>false,'delete'=>false,
+        return ['type'=>'List','name'=>'ExistingDevices','caption'=>'Bereits angelegte Geräte – Variablenbestand','rowCount'=>10,'add'=>false,'delete'=>false,'width'=>'100%',
             'form'=>'return SDM_GetExistingDeviceDialogForm($id, (int)($ExistingDevices["deviceID"] ?? 0));',
             'columns'=>[
-                ['caption'=>'Alias','name'=>'alias','width'=>'18%'],
-                ['caption'=>'Gerät','name'=>'name','width'=>'27%'],
-                ['caption'=>'Raum','name'=>'room','width'=>'25%'],
-                ['caption'=>'Gewerk','name'=>'trade','width'=>'20%'],
-                ['caption'=>'Dummy-ID','name'=>'dummyID','width'=>'90px'],
-                ['caption'=>'Links','name'=>'links','width'=>'70px']
+                ['caption'=>'Alias','name'=>'alias','width'=>'16%'],
+                ['caption'=>'Gerät','name'=>'name','width'=>'28%'],
+                ['caption'=>'Etage','name'=>'floor','width'=>'9%'],
+                ['caption'=>'Raum','name'=>'room','width'=>'17%'],
+                ['caption'=>'Gewerk','name'=>'trade','width'=>'14%'],
+                ['caption'=>'Dummy-ID','name'=>'dummyID','width'=>'95px'],
+                ['caption'=>'Links','name'=>'links','width'=>'65px']
             ],'values'=>$rows];
     }
 
