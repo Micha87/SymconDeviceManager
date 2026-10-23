@@ -1,0 +1,13 @@
+{
+  "id": "{7C91D1A2-29C9-4DF7-86BD-BB23E4795C71}",
+  "name": "Managed Device",
+  "type": 3,
+  "vendor": "SymconDeviceManager",
+  "aliases": [
+    "Symcon Managed Device"
+  ],
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "SDMD"
+}
