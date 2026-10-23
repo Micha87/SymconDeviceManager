@@ -39,6 +39,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeBoolean('ShowExistingDevices', false);
         $this->RegisterPropertyString('DeviceDraftRows', '[]');
         $this->RegisterAttributeString('DeviceListSearch', '');
+        $this->RegisterAttributeString('ExistingDeviceSearch', '');
         $this->RegisterAttributeInteger('ManageDeviceID', 0);
 
     }
@@ -136,6 +137,7 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
                 $draftList,
+                ['type'=>'ValidationTextBox','name'=>'ExistingDeviceSearch','caption'=>'Angelegte Geräte filtern (Volltext)','value'=>$this->ReadAttributeString('ExistingDeviceSearch'),'onChange'=>'SDM_SetExistingDeviceSearch($id, $ExistingDeviceSearch);'],
                 $this->BuildExistingDeviceList(),
                 $this->BuildLinkManagement()
             ],
@@ -526,11 +528,19 @@ class DeviceManager extends IPSModule
         $this->UpdateFormField('selectedVariables','values',json_encode($this->DeviceDialogVariables($deviceID), JSON_UNESCAPED_UNICODE));
     }
 
+    public function SetExistingDeviceSearch(string $search)
+    {
+        $this->WriteAttributeString('ExistingDeviceSearch',trim($search));
+        $list = $this->BuildExistingDeviceList();
+        $this->UpdateFormField('ExistingDevices','values',json_encode($list['values'],JSON_UNESCAPED_UNICODE));
+    }
+
     private function BuildExistingDeviceList(): array
     {
         $devices = $this->DiscoverPilotDevices();
         $rows = [];
         $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        $search = trim($this->ReadAttributeString('ExistingDeviceSearch'));
         foreach ($devices as $id => $device) {
             $a = $this->DeviceAssignment($id, $device);
             $floor = $this->FindCategoryByName($root, $a['floor']);
@@ -538,6 +548,8 @@ class DeviceManager extends IPSModule
             $trade = $room ? $this->FindCategoryByName($room, $a['trade']) : 0;
             $dummy = $trade ? $this->FindDeviceDummy($trade, $device['name']) : 0;
             if (!$dummy) continue;
+            $haystack = $device['name'].' '.$device['path'].' '.$id.' '.$a['floor'].' '.$a['room'].' '.$a['trade'].' '.$dummy;
+            if ($search !== '' && mb_stripos($haystack,$search,0,'UTF-8') === false) continue;
             $links = 0;
             foreach (IPS_GetChildrenIDs($dummy) as $child) {
                 if (IPS_GetObject($child)['ObjectType'] === 6) $links++;
