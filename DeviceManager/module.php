@@ -138,8 +138,7 @@ class DeviceManager extends IPSModule
                 $deviceSearch,
                 $draftList,
                 ['type'=>'ValidationTextBox','name'=>'ExistingDeviceSearch','caption'=>'Angelegte Geräte filtern (Volltext)','value'=>$this->ReadAttributeString('ExistingDeviceSearch'),'onChange'=>'SDM_SetExistingDeviceSearch($id, $ExistingDeviceSearch);'],
-                $this->BuildExistingDeviceList(),
-                $this->BuildLinkManagement()
+                $this->BuildExistingDeviceList()
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
