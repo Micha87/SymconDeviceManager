@@ -1116,12 +1116,21 @@ class DeviceManager extends IPSModule
         }
         return [
             'type'=>'ExpansionPanel',
-            'caption'=>'PROTOTYP – Geräte direkt in einer Tabelle bearbeiten',
+            'caption'=>'PROTOTYP – Stift direkt in der Gerätezeile',
             'expanded'=>false,
             'items'=>[
-                ['type'=>'Label','caption'=>'Testansicht: Zahnrad öffnet die Bearbeitung von Gerätename, Etage, Raum und Gewerk. Bestehende Instanzen und Links werden nicht verändert.'],
+                ['type'=>'Label','caption'=>'Testansicht: Stift öffnet den Bearbeitungsdialog für Gerätename, Etage, Raum und Gewerk. Bestehende Instanzen und Links werden nicht verändert.'],
                 ['type'=>'List','name'=>'DeviceTablePrototype','caption'=>'Geräte (Prototyp)','rowCount'=>12,
                     'add'=>false,'delete'=>false,
+                    'form'=>[
+                        'type'=>'ColumnLayout',
+                        'items'=>[
+                            ['type'=>'ValidationTextBox','name'=>'deviceName','caption'=>'Gerätename'],
+                            ['type'=>'ValidationTextBox','name'=>'floor','caption'=>'Etage'],
+                            ['type'=>'ValidationTextBox','name'=>'room','caption'=>'Raum'],
+                            ['type'=>'ValidationTextBox','name'=>'trade','caption'=>'Gewerk']
+                        ]
+                    ],
                     'onEdit'=>'SDM_SaveDeviceTablePrototype($id, json_encode($DeviceTablePrototype));',
                     'columns'=>[
                         ['caption'=>'Quell-ID','name'=>'deviceID','width'=>'90px','save'=>true],
