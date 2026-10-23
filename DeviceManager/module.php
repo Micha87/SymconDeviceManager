@@ -290,6 +290,15 @@ class DeviceManager extends IPSModule
                     $functions[$label] = $variableID;
                 }
             }
+            // Some integrations expose variables through nested instances or direct dummy variables.
+            if ($isDummy) {
+                foreach (IPS_GetChildrenIDs($id) as $variableID) {
+                    if (IPS_GetObject($variableID)['ObjectType'] !== 2) continue;
+                    $label = IPS_GetName($variableID);
+                    if (isset($functions[$label])) $label .= ' '.$variableID;
+                    $functions[$label] = $variableID;
+                }
+            }
             if (!$functions) continue;
             $devices[(string) $id] = [
                 'name' => $name, 'functions' => $functions,
@@ -1083,12 +1092,15 @@ class DeviceManager extends IPSModule
         }
         $roomOptions = array_values($roomOptions);
         foreach ($devices as $id => $device) {
+            $a = $this->DeviceAssignment($id, $device);
+            // A managed dummy is already an existing device, even when some source variables are not linked.
+            $managedDummy = $this->ManagedDummyID((int)$id,$device,$a);
+            if ($managedDummy) { $hidden++; continue; }
             $allLinked = count($device['functions']) > 0;
             foreach ($device['functions'] as $variableID) {
                 if (!isset($linked[$variableID])) { $allLinked = false; break; }
             }
             if ($allLinked) { $hidden++; continue; }
-            $a = $this->DeviceAssignment($id, $device);
             $haystack = $device['name'] . ' ' . $device['path'] . ' ' . $id . ' ' . $a['floor'] . ' ' . $a['room'] . ' ' . $a['trade'];
             if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false) continue;
             $saved[] = ['deviceID' => (int) $id, 'floor' => $a['floor'], 'room' => $a['room'],
