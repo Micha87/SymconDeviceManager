@@ -1128,7 +1128,8 @@ class DeviceManager extends IPSModule
                     'moduleID'=>'{7C91D1A2-29C9-4DF7-86BD-BB23E4795C71}',
                     'configuration'=>[
                         'SourceInstanceID'=>(int)$id,
-                        'Links'=>json_encode(array_map(static function($variableID) { return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>IPS_GetName((int)$variableID)]; },array_values($device['functions'])),JSON_UNESCAPED_UNICODE)
+                        'DeviceName'=>(string)($a['deviceName'] ?? $device['name']),
+                        'Links'=>json_encode(array_map(static function($variableID) { return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>(IPS_GetName((int)$variableID) === 'Wert' && IPS_GetParent((int)$variableID) > 0 ? IPS_GetName(IPS_GetParent((int)$variableID)) : IPS_GetName((int)$variableID))]; },array_values($device['functions'])),JSON_UNESCAPED_UNICODE)
                     ],
                     'location'=>array_values(array_filter([$a['floor'],$a['room'],$a['trade']]))
                 ]
