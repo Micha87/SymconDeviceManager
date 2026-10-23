@@ -140,10 +140,10 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
                 $nativeConfigurator,
-                $this->BuildDeviceTablePrototype(),
 
             ],
             'actions' => [
+                $this->BuildDeviceTablePrototype(),
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
                 ['type' => 'Label', 'caption' => 'Nach dem Scan die Konfiguration erneut öffnen, um die Vorschläge zu sehen.']
             ]
@@ -1121,7 +1121,7 @@ class DeviceManager extends IPSModule
             'items'=>[
                 ['type'=>'Label','caption'=>'Testansicht: Stift öffnet den Bearbeitungsdialog für Gerätename, Etage, Raum und Gewerk. Bestehende Instanzen und Links werden nicht verändert.'],
                 ['type'=>'List','name'=>'DeviceTablePrototype','caption'=>'Geräte (Prototyp)','rowCount'=>12,
-                    'add'=>false,'delete'=>false,
+                    'add'=>false,'delete'=>false,'loadValuesFromConfiguration'=>false,
                     'form'=>[
                         ['type'=>'ValidationTextBox','name'=>'deviceName','caption'=>'Gerätename'],
                         ['type'=>'ValidationTextBox','name'=>'floor','caption'=>'Etage'],
@@ -1131,10 +1131,10 @@ class DeviceManager extends IPSModule
                     'onEdit'=>'SDM_SaveDeviceTablePrototype($id, json_encode($DeviceTablePrototype));',
                     'columns'=>[
                         ['caption'=>'Quell-ID','name'=>'deviceID','width'=>'90px','save'=>true],
-                        ['caption'=>'Gerätename','name'=>'deviceName','width'=>'23%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Etage','name'=>'floor','width'=>'12%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Raum','name'=>'room','width'=>'17%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Gewerk','name'=>'trade','width'=>'16%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Gerätename','name'=>'deviceName','width'=>'23%','save'=>true],
+                        ['caption'=>'Etage','name'=>'floor','width'=>'12%','save'=>true],
+                        ['caption'=>'Raum','name'=>'room','width'=>'17%','save'=>true],
+                        ['caption'=>'Gewerk','name'=>'trade','width'=>'16%','save'=>true],
                         ['caption'=>'Quelle','name'=>'source','width'=>'25%','save'=>true]
                     ],
                     'values'=>$rows
