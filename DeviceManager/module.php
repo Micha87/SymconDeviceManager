@@ -1126,10 +1126,12 @@ class DeviceManager extends IPSModule
                 'deviceID'=>(int)$id,
                 'type'=>'Gerät',
                 'floor'=>$floor,
+                'floorName'=>$floor,
                 'room'=>$room,
                 'name'=>$deviceName,
                 'source'=>$device['path'],
                 'trade'=>$trade,
+                'tradeName'=>$trade,
                 'variables'=>count($device['functions']),
                 'instanceID'=>$nativeInstance,
                 'create'=>[
@@ -1154,11 +1156,11 @@ class DeviceManager extends IPSModule
             'delete'=>false,
             'columns'=>[
                 ['caption'=>'Typ','name'=>'type','width'=>'70px'],
-                ['caption'=>'Etage','name'=>'floor','width'=>'100px'],
+                ['caption'=>'Etage','name'=>'floorName','width'=>'100px'],
                 ['caption'=>'Raum','name'=>'room','width'=>'140px'],
                 ['caption'=>'Gerät','name'=>'name','width'=>'20%'],
                 ['caption'=>'Quelle','name'=>'source','width'=>'35%'],
-                ['caption'=>'Gewerk','name'=>'trade','width'=>'120px'],
+                ['caption'=>'Gewerk','name'=>'tradeName','width'=>'120px'],
                 ['caption'=>'Variablen','name'=>'variables','width'=>'90px'],
 
             ],
