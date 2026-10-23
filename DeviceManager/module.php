@@ -44,7 +44,7 @@ class DeviceManager extends IPSModule
                 $floors[] = $parts[0];
                 $rooms[] = $r['room'];
             }
-            $types[] = $r['deviceType'] ?? 'Sonstige';
+            $types[] = $r['deviceType'] ?? $this->GuessType($r['device'] ?? '');
         }
         $floors = array_values(array_unique($floors));
         $rooms = array_values(array_unique($rooms));
@@ -200,19 +200,20 @@ class DeviceManager extends IPSModule
     {
         $groups = [];
         foreach ($rows as $r) {
-            $name = preg_replace('/_(s|d|w)$/iu', '', $r['device']);
+            $name = preg_replace('/_(s|d|w)$/iu', '', $r['device'] ?? 'Unbekannt');
             $name = preg_replace('/^(Bel|HZG|Rollo|Rolladen)[.\\-_ ]+/iu', '', $name);
             $name = preg_replace('/^(Wz|Wohnzim|Kü|Kueche|Küche)[.\\-_ ]+/iu', '', $name);
-            $key = mb_strtolower($r['room'] . '|' . $r['deviceType'] . '|' . $name, 'UTF-8');
+            $type = $r['deviceType'] ?? $this->GuessType($r['device'] ?? '');
+            $key = mb_strtolower(($r['room'] ?? 'Nicht zugeordnet') . '|' . $type . '|' . $name, 'UTF-8');
             if (!isset($groups[$key])) {
                 $groups[$key] = [
-                    'room' => $r['room'], 'deviceType' => $r['deviceType'],
+                    'room' => $r['room'] ?? 'Nicht zugeordnet', 'deviceType' => $type,
                     'device' => $name, 'functions' => [], 'count' => 0, 'instances' => []
                 ];
             }
             $groups[$key]['count']++;
-            $groups[$key]['functions'][$r['function']] = true;
-            $groups[$key]['instances'][$r['instance']] = true;
+            $groups[$key]['functions'][$r['function'] ?? 'Unbekannt'] = true;
+            $groups[$key]['instances'][$r['instance'] ?? '?'] = true;
         }
         $result = [];
         foreach ($groups as $g) {
