@@ -812,7 +812,7 @@ class DeviceManager extends IPSModule
         }
         foreach ($rows as &$row) {
             $varID = (string)$row['variableID'];
-            $row['name'] = $a['linkNames'][$varID] ?? (isset($linked[(int)$varID]) ? IPS_GetName($linked[(int)$varID]) : IPS_GetName((int)$varID));
+            $row['name'] = isset($linked[(int)$varID]) ? IPS_GetName($linked[(int)$varID]) : ($a['linkNames'][$varID] ?? IPS_GetName((int)$varID));
         }
         unset($row);
         foreach ($rows as &$row) {
@@ -849,6 +849,8 @@ class DeviceManager extends IPSModule
     {
         $rows = json_decode($rowsJSON,true);
         if (!is_array($rows)) throw new Exception('Ungültige Variablenliste.');
+        // IP-Symcon sends one edited row, not necessarily the complete List.
+        if (isset($rows['variableID'])) $rows = [$rows];
         $devices = $this->DiscoverPilotDevices();
         if (!isset($devices[(string)$deviceID])) throw new Exception('Gerät fehlt.');
         $a = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
