@@ -1,8 +1,8 @@
 <?php
 /**
- * Symcon Device Manager 0.2 - read-only grouping prototype.
+ * Symcon Device Manager 0.2 - discovery and explicit category management.
  * Discovers hardware datapoints and proposes room/device/function mappings.
- * No object writes, moves, links, or hardware commands are performed.
+ * Only explicitly requested new-building category creation is permitted; no moves, links or hardware commands.
  */
 class DeviceManager extends IPSModule
 {
@@ -11,6 +11,7 @@ class DeviceManager extends IPSModule
         parent::Create();
         $this->RegisterPropertyInteger('HardwareRoot', 10094);
         $this->RegisterPropertyInteger('BuildingRoot', 28329);
+        $this->RegisterPropertyInteger('ManagedBuildingRoot', 58840);
         $this->RegisterPropertyString('RoomAliases', json_encode([
             'wohnzim' => 'EG/Wohnzimmer', 'wohnzimmer' => 'EG/Wohnzimmer',
             'kü' => 'EG/Küche', 'kueche' => 'EG/Küche', 'küche' => 'EG/Küche',
@@ -69,7 +70,7 @@ class DeviceManager extends IPSModule
         $grouped = $this->GroupDevices($filtered);
         $plan = json_decode($this->ReadAttributeString('BuildingPlan'), true);
         if (!is_array($plan)) $plan = [];
-        if (count($plan) === 0) $plan = $this->ReadBuildingPlan();
+        if (count($plan) === 0) $plan = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
         $planRows = [];
         foreach ($plan as $floor => $roomNames) {
             if (!is_array($roomNames)) continue;
@@ -84,15 +85,16 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Prototyp 0.2: Hardware und Bestandsstruktur lesen, Geräte gruppieren. Keine Objektänderungen.'],
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
+                ['type' => 'NumberSpinner', 'name' => 'ManagedBuildingRoot', 'caption' => 'Neue Gebäudestruktur (Ziel-ID)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
-                ['type' => Select, 'name' => 'FilterFloor', 'value' => $filterFloor, 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $FilterFloor);'],
+                ['type' => 'Select', 'name' => 'FilterFloor', 'value' => $filterFloor, 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $FilterFloor);'],
                 ['type' => Select, 'name' => 'FilterRoom', 'value' => $filterRoom, 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $FilterRoom);'],
                 ['type' => Select, 'name' => 'FilterType', 'value' => $filterType, 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types), 'onChange' => 'SDM_SetLiveFilter($id, "Type", $FilterType);'],
-                ['type' => ValidationTextBox, 'name' => 'FilterText', 'value' => $filterText, 'caption' => 'Freitext (Name / ID / Funktion)', 'onChange' => 'SDM_SetLiveFilter($id, "Text", $FilterText);'],
+                ['type' => 'ValidationTextBox', 'name' => 'FilterText', 'value' => $filterText, 'caption' => 'Freitext (Name / ID / Funktion)', 'onChange' => 'SDM_SetLiveFilter($id, "Text", $FilterText);'],
                 ['type' => 'Label', 'caption' => count($filtered) . ' von ' . count($rows) . ' Datenpunkten sichtbar. Filter aktualisieren die Ansicht ohne Schließen (Freitext nach Eingabebestätigung).'],
                 ['type' => 'Label', 'caption' => count($grouped) . ' erkannte Gerätegruppen (vorläufig; Zuordnungen prüfen)'],
-                ['type' => 'ExpansionPanel', 'caption' => 'Gebäudeverwaltung (Entwurf, noch keine Objektänderungen)', 'items' => [
-                    ['type' => 'Label', 'caption' => 'Gebäudeplan unabhängig von der bestehenden Struktur bearbeiten. Erst nach späterer Migrationsfreigabe werden Kategorien angelegt.'],
+                ['type' => 'ExpansionPanel', 'caption' => 'Gebäudeverwaltung – neue Struktur', 'items' => [
+                    ['type' => 'Label', 'caption' => 'Die Aktionen „in Symcon anlegen“ erzeugen echte Kategorien ausschließlich unter der Ziel-ID. Bestehende Kategorien werden wiederverwendet. Löschen ist hier nicht möglich.'],
                     ['type' => 'List', 'name' => 'BuildingPreview', 'caption' => 'Geplante Etagen und Räume',
                         'rowCount' => 8, 'add' => false, 'delete' => false,
                         'columns' => [
@@ -102,7 +104,11 @@ class DeviceManager extends IPSModule
                     ],
                     ['type' => 'ValidationTextBox', 'name' => 'DraftFloor', 'caption' => 'Etage (z.B. EG)', 'onChange' => 'SDM_SetDraft($id, "Floor", $DraftFloor);'],
                     ['type' => 'ValidationTextBox', 'name' => 'DraftRoom', 'caption' => 'Raum (z.B. Wohnzimmer)', 'onChange' => 'SDM_SetDraft($id, "Room", $DraftRoom);'],
-                    ['type' => 'Button', 'caption' => 'Etage hinzufügen', 'onClick' => 'SDM_EditBuildingPlan($id, "AddFloor");'],
+                    ['type' => 'Button', 'caption' => 'Etage in Symcon anlegen', 'onClick' => 'SDM_CreateBuildingCategory($id, "Floor");'],
+                    ['type' => 'Button', 'caption' => 'Raum in Symcon anlegen', 'onClick' => 'SDM_CreateBuildingCategory($id, "Room");'],
+                    ['type' => 'Button', 'caption' => 'Gewerk in Symcon anlegen (Beleuchtung)', 'onClick' => 'SDM_CreateBuildingCategory($id, "Trade");'],
+                    ['type' => 'Button', 'caption' => 'Zielstruktur neu einlesen', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);'],
+                    ['type' => 'Button', 'caption' => 'Etage im Entwurf hinzufügen', 'onClick' => 'SDM_EditBuildingPlan($id, "AddFloor");'],
                     ['type' => 'Button', 'caption' => 'Raum hinzufügen', 'onClick' => 'SDM_EditBuildingPlan($id, "AddRoom");'],
                     ['type' => 'Button', 'caption' => 'Raum entfernen (Entwurf)', 'onClick' => 'SDM_EditBuildingPlan($id, "RemoveRoom");'],
                     ['type' => 'Button', 'caption' => 'Etage entfernen (nur wenn leer)', 'onClick' => 'SDM_EditBuildingPlan($id, "RemoveFloor");'],
@@ -195,9 +201,9 @@ class DeviceManager extends IPSModule
         $this->ReloadForm();
     }
 
-    private function ReadBuildingPlan()
+    private function ReadBuildingPlan($root = null)
     {
-        $root = $this->ReadPropertyInteger('BuildingRoot');
+        if ($root === null) $root = $this->ReadPropertyInteger('BuildingRoot');
         if (!IPS_ObjectExists($root)) return [];
         $plan = [];
         foreach (IPS_GetChildrenIDs($root) as $floorID) {
@@ -236,6 +242,51 @@ class DeviceManager extends IPSModule
         }
         $this->WriteAttributeString('BuildingPlan', json_encode($plan, JSON_UNESCAPED_UNICODE));
         $this->ReloadForm();
+    }
+
+    /**
+     * Only create categories inside the explicitly configured new building tree.
+     * Never move, rename, delete or change hardware objects.
+     */
+    public function CreateBuildingCategory($level)
+    {
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        if ($root <= 0 || !IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) {
+            throw new Exception('Ziel-Gebäudekategorie ist nicht gültig: ' . $root);
+        }
+        if ($root === $this->ReadPropertyInteger('HardwareRoot') || $root === $this->ReadPropertyInteger('BuildingRoot')) {
+            throw new Exception('Die Zielstruktur muss getrennt von Hardware und Bestandsgebäude sein.');
+        }
+        $floor = trim($this->ReadAttributeString('DraftFloor'));
+        $room = trim($this->ReadAttributeString('DraftRoom'));
+        if ($floor === '' || strpos($floor, '/') !== false || $floor === '.' || $floor === '..') {
+            throw new Exception('Bitte einen gültigen Etagenamen eingeben.');
+        }
+        if (!in_array($level, ['Floor', 'Room', 'Trade'], true)) throw new Exception('Ungültige Ebene');
+        if ($level !== 'Floor' && ($room === '' || strpos($room, '/') !== false || $room === '.' || $room === '..')) {
+            throw new Exception('Bitte einen gültigen Raumnamen eingeben.');
+        }
+        $floorID = $this->FindOrCreateCategory($root, $floor);
+        if ($level !== 'Floor') {
+            $roomID = $this->FindOrCreateCategory($floorID, $room);
+            if ($level === 'Trade') $this->FindOrCreateCategory($roomID, 'Beleuchtung');
+        }
+        $this->ReloadForm();
+    }
+
+    private function FindOrCreateCategory($parent, $name)
+    {
+        foreach (IPS_GetChildrenIDs($parent) as $childID) {
+            $child = IPS_GetObject($childID);
+            if ($child['ObjectName'] === $name) {
+                if ($child['ObjectType'] !== 0) throw new Exception('Namenskonflikt mit Nicht-Kategorie: ' . $name);
+                return $childID;
+            }
+        }
+        $id = IPS_CreateCategory();
+        IPS_SetName($id, $name);
+        IPS_SetParent($id, $parent);
+        return $id;
     }
 
     public function GetPreviewJSON()
