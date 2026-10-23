@@ -526,10 +526,19 @@ class DeviceManager extends IPSModule
         $this->UpdateFormField('DeviceDraftRows', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
     }
 
-    public function SaveDeviceDraft(string $rowsJSON)
+    public function SaveDeviceDraft($rowsInput)
     {
-        $rows = json_decode($rowsJSON, true);
+        if (is_string($rowsInput)) {
+            $rows = json_decode($rowsInput, true);
+        } elseif (is_array($rowsInput)) {
+            $rows = $rowsInput;
+        } elseif (is_object($rowsInput)) {
+            $rows = json_decode(json_encode($rowsInput, JSON_UNESCAPED_UNICODE), true);
+        } else {
+            return;
+        }
         if (!is_array($rows)) return;
+        if (isset($rows['values']) && is_array($rows['values'])) $rows = $rows['values'];
         $devices = $this->DiscoverPilotDevices();
         $savedAssignments = json_decode($this->ReadAttributeString('DeviceAssignments'), true);
         if (!is_array($savedAssignments)) $savedAssignments = [];
@@ -557,7 +566,7 @@ class DeviceManager extends IPSModule
         }
     }
 
-    public function DeleteDeviceDraft(string $rowsJSON)
+    public function DeleteDeviceDraft($rowsJSON)
     {
         $this->SaveDeviceDraft($rowsJSON);
     }
