@@ -37,6 +37,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeInteger('EditingDevice', 0);
         $this->RegisterAttributeString('DeviceSearch', '');
         $this->RegisterAttributeBoolean('ShowExistingDevices', false);
+        $this->RegisterAttributeString('DeviceDraftRows', '[]');
     }
 
     public function ApplyChanges()
@@ -90,6 +91,7 @@ class DeviceManager extends IPSModule
         $deviceItems = $this->BuildDeviceImportControls();
         $deviceConfigurator = $this->BuildNativeDeviceConfigurator();
         $testEditor = $this->BuildUniversalDeviceEditor();
+        $draftList = $this->BuildDeviceDraftList();
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
@@ -131,6 +133,7 @@ class DeviceManager extends IPSModule
                 ]],
                 ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Vorerst nur Vorschau, keine Erstellung.'],
                 $deviceConfigurator,
+                $draftList,
                 $testEditor
             ],
             'actions' => [
@@ -449,6 +452,65 @@ class DeviceManager extends IPSModule
             ['type' => 'Label', 'caption' => 'Bitte oben ein Gerät auswählen.']
         ];
         $this->UpdateFormField('UniversalEditor', 'items', json_encode($items, JSON_UNESCAPED_UNICODE));
+    }
+
+    private function BuildDeviceDraftList()
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $plan = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
+        $saved = json_decode($this->ReadAttributeString('DeviceDraftRows'), true);
+        if (!is_array($saved)) $saved = [];
+        $deviceOptions = [['caption' => 'Gerät auswählen', 'value' => 0]];
+        $floorOptions = [['caption' => 'Etage wählen', 'value' => '']];
+        $roomOptions = [['caption' => 'Raum wählen', 'value' => '']];
+        foreach ($plan as $floor => $rooms) {
+            $floorOptions[] = ['caption' => $floor, 'value' => $floor];
+            foreach ($rooms as $room) $roomOptions[$room] = ['caption' => $room, 'value' => $room];
+        }
+        $roomOptions = array_values($roomOptions);
+        foreach ($devices as $id => $device) {
+            $deviceOptions[] = ['caption' => $device['name'] . ' | ' . $device['path'], 'value' => (int) $id];
+        }
+        $tradeOptions = [];
+        foreach (['Unbekannt', 'Beleuchtung', 'Heizung', 'Rollladen', 'Multimedia', 'Steckdosen', 'Sensoren', 'Sonstige'] as $trade) {
+            $tradeOptions[] = ['caption' => $trade, 'value' => $trade];
+        }
+        return [
+            'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Geräte zur Übernahme vormerken (Hinzufügen öffnet Dialog)',
+            'rowCount' => 6, 'add' => true, 'delete' => true,
+            'columns' => [
+                ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '220px', 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
+                ['caption' => 'Etage', 'name' => 'floor', 'width' => '90px', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
+                ['caption' => 'Raum', 'name' => 'room', 'width' => '130px', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
+                ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px', 'edit' => ['type' => 'Select', 'options' => $tradeOptions]],
+                ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px']
+            ],
+            'values' => $saved,
+            'onAdd' => 'SDM_AddDeviceDraft($id);',
+            'onDelete' => 'SDM_DeleteDeviceDraft($id, $DeviceDraftRows);',
+            'onEdit' => 'SDM_SaveDeviceDraft($id, $DeviceDraftRows);'
+        ];
+    }
+
+    public function AddDeviceDraft()
+    {
+        $rows = json_decode($this->ReadAttributeString('DeviceDraftRows'), true);
+        if (!is_array($rows)) $rows = [];
+        $rows[] = ['deviceID' => 0, 'floor' => '', 'room' => '', 'trade' => 'Unbekannt', 'variableCount' => 0];
+        $this->WriteAttributeString('DeviceDraftRows', json_encode($rows, JSON_UNESCAPED_UNICODE));
+        $this->UpdateFormField('DeviceDraftRows', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
+    }
+
+    public function SaveDeviceDraft(string $rowsJSON)
+    {
+        $rows = json_decode($rowsJSON, true);
+        if (!is_array($rows)) return;
+        $this->WriteAttributeString('DeviceDraftRows', json_encode($rows, JSON_UNESCAPED_UNICODE));
+    }
+
+    public function DeleteDeviceDraft(string $rowsJSON)
+    {
+        $this->SaveDeviceDraft($rowsJSON);
     }
 
     private function BuildNativeDeviceConfigurator()
