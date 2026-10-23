@@ -575,11 +575,23 @@ class DeviceManager extends IPSModule
             if (!$link) {
                 $link = IPS_CreateLink();
                 IPS_SetParent($link,$dummy);
-                IPS_SetName($link,$a['linkNames'][(string)$variableID] ?? $this->SuggestedLinkName((string)$function,(int)$variableID));
+                IPS_SetName($link,$this->EffectiveLinkName($a,(int)$variableID,(string)$function));
             }
             IPS_SetLinkTargetID($link,$variableID);
         }
         $this->ReloadForm();
+    }
+
+    private function EffectiveLinkName(array $assignment, int $variableID, string $function): string
+    {
+        $suggested = $this->SuggestedLinkName($function,$variableID);
+        $stored = trim((string)($assignment['linkNames'][(string)$variableID] ?? ''));
+        if ($stored === '') return $suggested;
+        $source = trim(IPS_GetName($variableID));
+        // Older dialog versions stored the technical function label together with
+        // the source name. Treat only these exact legacy defaults as suggestions.
+        if ($source !== '' && preg_match('/^Wert(?:\\s+\\d+)?\\s*[–-]\\s*'.preg_quote($source,'/').'$/iu',$stored)) return $suggested;
+        return $stored;
     }
 
     private function SuggestedLinkName(string $function, int $variableID): string
@@ -606,7 +618,7 @@ class DeviceManager extends IPSModule
         foreach ($devices[(string)$deviceID]['functions'] as $function=>$variableID) {
             if (!IPS_ObjectExists($variableID)) continue;
             $rows[] = ['enabled'=>array_key_exists((string)$variableID,$a['variables']) ? (bool)$a['variables'][(string)$variableID] : true,
-                'name'=>$a['linkNames'][(string)$variableID] ?? $this->SuggestedLinkName((string)$function,(int)$variableID),
+                'name'=>$this->EffectiveLinkName($a,(int)$variableID,(string)$function),
                 'sourceName'=>IPS_GetName($variableID),
                 'variableID'=>(int)$variableID];
         }
