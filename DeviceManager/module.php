@@ -982,7 +982,6 @@ class DeviceManager extends IPSModule
         }
         $roomOptions = array_values($roomOptions);
         foreach ($devices as $id => $device) {
-            if (count($device['functions']) === 0) continue;
             $allLinked = count($device['functions']) > 0;
             foreach ($device['functions'] as $variableID) {
                 if (!isset($linked[$variableID])) { $allLinked = false; break; }
@@ -1008,7 +1007,7 @@ class DeviceManager extends IPSModule
                 ['caption' => 'Etage', 'name' => 'floor', 'width' => '12%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
                 ['caption' => 'Raum', 'name' => 'room', 'width' => '18%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
                 ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px', 'add' => 'Unbekannt', 'edit' => ['type' => 'Select', 'options' => $tradeOptions]],
-                ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0]
+                ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0, 'edit' => ['type' => 'Label']]
             ],
             'values' => $saved
         ];
