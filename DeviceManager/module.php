@@ -89,7 +89,7 @@ class DeviceManager extends IPSModule
         $importItems = $this->BuildImportControls();
         $deviceItems = $this->BuildDeviceImportControls();
         $deviceConfigurator = $this->BuildNativeDeviceConfigurator();
-        $testEditor = $this->BuildTestDeviceEditor(52319);
+        $testEditor = $this->BuildUniversalDeviceEditor();
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
@@ -410,11 +410,11 @@ class DeviceManager extends IPSModule
         ];
     }
 
-    private function BuildTestDeviceEditor($deviceID)
+    private function BuildDeviceEditorItems($deviceID)
     {
         $devices = $this->DiscoverPilotDevices();
         if (!isset($devices[(string) $deviceID])) {
-            return ['type' => 'Label', 'caption' => 'Testeditor: Shelly Klima Wohnzimmer (52319) ist in der gewählten Hardwarequelle nicht enthalten.'];
+            return [['type' => 'Label', 'caption' => 'Gerät nicht in der aktuellen Hardwarequelle gefunden.']];
         }
         $device = $devices[(string) $deviceID];
         $a = $this->DeviceAssignment($deviceID, $device);
@@ -431,7 +431,7 @@ class DeviceManager extends IPSModule
             $tradeOptions[] = ['caption' => $trade, 'value' => $trade];
         }
         $items = [
-            ['type' => 'Label', 'caption' => 'Testgerät: ' . $device['name'] . ' | ' . $device['path'] . '. Änderungen werden nur als Entwurf gespeichert. Keine Dummys oder Links werden angelegt.'],
+            ['type' => 'Label', 'caption' => 'Gerät: ' . $device['name'] . ' | ' . $device['path'] . '. Änderungen werden nur als Entwurf gespeichert. Keine Dummys oder Links werden angelegt.'],
             ['type' => 'Select', 'name' => 'TestFloor', 'caption' => 'Etage', 'value' => $a['floor'], 'options' => $floorOptions,
                 'onChange' => 'SDM_SetDeviceAssignment($id, ' . $deviceID . ', "floor", $TestFloor);'],
             ['type' => 'Select', 'name' => 'TestRoom', 'caption' => 'Raum', 'value' => $a['room'], 'options' => $roomOptions,
@@ -447,7 +447,39 @@ class DeviceManager extends IPSModule
                 'value' => $checked,
                 'onChange' => 'SDM_SetDeviceVariable($id, ' . $deviceID . ', ' . $variableID . ', $TestVar_' . $variableID . ');'];
         }
-        return ['type' => 'ExpansionPanel', 'caption' => 'Test: Klima Wohnzimmer – Raum, Gewerk und Variablen bearbeiten', 'items' => $items];
+        return $items;
+    }
+
+    private function BuildUniversalDeviceEditor()
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $editing = $this->ReadAttributeInteger('EditingDevice');
+        $options = [['caption' => 'Gerät auswählen …', 'value' => 0]];
+        foreach ($devices as $id => $device) {
+            $a = $this->DeviceAssignment($id, $device);
+            $options[] = ['caption' => $device['name'] . ' | ' . ($a['room'] ?: '?') . ' | ' . $device['path'], 'value' => (int) $id];
+        }
+        $items = [
+            ['type' => 'Label', 'caption' => 'Bearbeitung ohne vollständigen Formular-Neuaufbau. Noch keine Übernahmefunktion.'],
+            ['type' => 'Select', 'name' => 'UniversalDeviceSelect', 'caption' => 'Gerät bearbeiten', 'value' => isset($devices[(string) $editing]) ? $editing : 0,
+                'options' => $options, 'onChange' => 'SDM_OpenDeviceEditor($id, $UniversalDeviceSelect);'],
+            ['type' => 'ExpansionPanel', 'name' => 'UniversalEditor', 'caption' => 'Etage, Raum, Gewerk und Variablen',
+                'items' => ($editing > 0 && isset($devices[(string) $editing])) ? $this->BuildDeviceEditorItems($editing) : [
+                    ['type' => 'Label', 'caption' => 'Bitte oben ein Gerät auswählen.']
+                ]]
+        ];
+        return ['type' => 'ExpansionPanel', 'caption' => 'Geräte bearbeiten (Entwurf)', 'items' => $items];
+    }
+
+    public function OpenDeviceEditor(int $deviceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if ($deviceID !== 0 && !isset($devices[(string) $deviceID])) throw new Exception('Gerät nicht gefunden');
+        $this->WriteAttributeInteger('EditingDevice', $deviceID);
+        $items = $deviceID > 0 ? $this->BuildDeviceEditorItems($deviceID) : [
+            ['type' => 'Label', 'caption' => 'Bitte oben ein Gerät auswählen.']
+        ];
+        $this->UpdateFormField('UniversalEditor', 'items', json_encode($items, JSON_UNESCAPED_UNICODE));
     }
 
     private function BuildNativeDeviceConfigurator()
