@@ -425,7 +425,7 @@ class DeviceManager extends IPSModule
         $search = trim($this->ReadAttributeString('DeviceSearch'));
         $controls[] = ['type' => 'ValidationTextBox', 'name' => 'DeviceSearch', 'caption' => 'Volltextfilter (Gerät, Pfad, Raum, Gewerk)',
             'value' => $search, 'onChange' => 'SDM_SetDeviceSearch($id, $DeviceSearch);'];
-        $controls[] = ['type' => 'Button', 'caption' => 'Suche anwenden / Liste aktualisieren', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);'];
+        $controls[] = ['type' => 'Label', 'caption' => 'Suche filtert die Auswahlliste direkt, ohne den Bereich zu schließen.'];
         $deviceOptions = [['caption' => 'Gerät auswählen …', 'value' => 0]];
         foreach ($devices as $id => $device) {
             $assignment = $this->DeviceAssignment($id, $device);
@@ -434,7 +434,7 @@ class DeviceManager extends IPSModule
             if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false && (int) $id !== $editing) continue;
             $deviceOptions[] = ['caption' => $label . ' (' . $id . ')', 'value' => (int) $id];
         }
-        $controls[] = ['type' => 'Label', 'caption' => (count($deviceOptions) - 1) . ' Geräte im Auswahldialog (gefiltert).'];
+
         $controls[] = ['type' => 'Select', 'name' => 'EditingDevice', 'caption' => 'Gerät auswählen (Dropdown)',
             'value' => isset($devices[(string) $editing]) ? $editing : 0, 'options' => $deviceOptions,
             'onChange' => 'SDM_SetEditingDevice($id, $EditingDevice);'];
@@ -490,7 +490,19 @@ class DeviceManager extends IPSModule
 
     public function SetDeviceSearch(string $search)
     {
-        $this->WriteAttributeString('DeviceSearch', trim($search));
+        $search = trim($search);
+        $this->WriteAttributeString('DeviceSearch', $search);
+        $devices = $this->DiscoverPilotDevices();
+        $editing = $this->ReadAttributeInteger('EditingDevice');
+        $options = [['caption' => 'Gerät auswählen …', 'value' => 0]];
+        foreach ($devices as $id => $device) {
+            $assignment = $this->DeviceAssignment($id, $device);
+            $label = $device['name'] . ' | ' . ($assignment['floor'] ?: '?') . '/' . ($assignment['room'] ?: '?') . '/' . ($assignment['trade'] ?: '?');
+            $haystack = $label . ' ' . $device['path'] . ' ' . $id;
+            if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false && (int) $id !== $editing) continue;
+            $options[] = ['caption' => $label . ' (' . $id . ')', 'value' => (int) $id];
+        }
+        $this->UpdateFormField('EditingDevice', 'options', json_encode($options, JSON_UNESCAPED_UNICODE));
     }
 
     public function SetDeviceAssignment(int $deviceID, string $field, string $value)
