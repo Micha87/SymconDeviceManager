@@ -42,6 +42,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('ExistingDeviceSearch', '');
         $this->RegisterAttributeInteger('ManageDeviceID', 0);
         $this->RegisterAttributeString('ManagedEditDraft', '{}');
+        $this->RegisterAttributeString('HardwareSwapDraft', '{}');
 
     }
 
@@ -615,7 +616,65 @@ class DeviceManager extends IPSModule
             ['type'=>'Label','caption'=>'Raum/Gewerk ändern: Auswahl speichern und dann mit dem Button verschieben. Dummy- und Link-IDs bleiben erhalten.'],
             ['type'=>'Button','caption'=>'Gerät in gewählten Raum / Gewerk verschieben','onClick'=>'SDM_MoveManagedDevice($id, '.$deviceID.');']
         ]);
+        $swapOptions = [['caption'=>'Keine Änderung','value'=>0]];
+        foreach ($devices as $sourceID=>$sourceDevice) {
+            if ((int)$sourceID === $deviceID) continue;
+            $swapOptions[] = ['caption'=>$sourceDevice['name'].' ('.$sourceID.')','value'=>(int)$sourceID];
+        }
+        $swapDrafts = json_decode($this->ReadAttributeString('HardwareSwapDraft'),true);
+        $newSourceID = (int)(is_array($swapDrafts) ? ($swapDrafts[(string)$deviceID] ?? 0) : 0);
+        $form[] = ['type'=>'Select','name'=>'ReplacementSource','caption'=>'Neue Quellinstanz (Hardwaretausch)','value'=>$newSourceID,
+            'options'=>$swapOptions,'onChange'=>'SDM_SetHardwareSwapSource($id, '.$deviceID.', $ReplacementSource);'];
+        $form[] = ['type'=>'Label','caption'=>'Hardwaretausch nur bei eindeutiger Übereinstimmung aller verlinkten Funktionsnamen. Sonst wird nichts geändert.'];
+        $form[] = ['type'=>'Button','caption'=>'Hardwaretausch ausführen (bestehende Links umstellen)','onClick'=>'SDM_ApplyHardwareSwap($id, '.$deviceID.');'];
         return $form;
+    }
+
+    public function SetHardwareSwapSource(int $deviceID, int $newSourceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) throw new Exception('Bisheriges Gerät fehlt');
+        if ($newSourceID && !isset($devices[(string)$newSourceID])) throw new Exception('Neue Quelle fehlt');
+        $drafts = json_decode($this->ReadAttributeString('HardwareSwapDraft'),true);
+        if (!is_array($drafts)) $drafts = [];
+        $drafts[(string)$deviceID] = $newSourceID;
+        $this->WriteAttributeString('HardwareSwapDraft',json_encode($drafts));
+    }
+
+    public function ApplyHardwareSwap(int $deviceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $drafts = json_decode($this->ReadAttributeString('HardwareSwapDraft'),true);
+        $newID = (int)(is_array($drafts) ? ($drafts[(string)$deviceID] ?? 0) : 0);
+        if (!$newID || $newID === $deviceID || !isset($devices[(string)$newID]) || !isset($devices[(string)$deviceID])) {
+            throw new Exception('Bitte eine andere gültige Quellinstanz auswählen.');
+        }
+        $old = $devices[(string)$deviceID];
+        $a = $this->DeviceAssignment($deviceID,$old);
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        $floor = $this->FindCategoryByName($root,$a['floor']);
+        $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
+        $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
+        $dummy = $trade ? $this->FindDeviceDummy($trade,$old['name']) : 0;
+        if (!$dummy) throw new Exception('Bestehender Dummy fehlt.');
+        $oldFunctions = array_flip($old['functions']);
+        $newFunctions = $devices[(string)$newID]['functions'];
+        $operations = [];
+        foreach (IPS_GetChildrenIDs($dummy) as $child) {
+            if (IPS_GetObject($child)['ObjectType'] !== 6) continue;
+            $target = IPS_GetLink($child)['TargetID'];
+            if (!isset($oldFunctions[$target])) throw new Exception('Unbekannte bestehende Verknüpfung '.$child.' – Abbruch.');
+            $function = $oldFunctions[$target];
+            if (!isset($newFunctions[$function])) throw new Exception('Neue Quelle hat keine eindeutige Funktion: '.$function);
+            $newTarget = (int)$newFunctions[$function];
+            if (!IPS_ObjectExists($newTarget) || IPS_GetObject($newTarget)['ObjectType'] !== 2) throw new Exception('Zielvariable ungültig: '.$newTarget);
+            $operations[$child] = $newTarget;
+        }
+        if (!$operations) throw new Exception('Keine Links zum Umstellen vorhanden.');
+        foreach ($operations as $link=>$target) IPS_SetLinkTargetID($link,$target);
+        unset($drafts[(string)$deviceID]);
+        $this->WriteAttributeString('HardwareSwapDraft',json_encode($drafts));
+        $this->ReloadForm();
     }
 
     public function SetManagedEditField(int $deviceID, string $field, string $value)
