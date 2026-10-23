@@ -64,6 +64,7 @@ class ManagedDevice extends IPSModule
         foreach ($vars as $id=>$name) {
             $rows[] = [
                 'sourceID'=>$id,
+                'sourceIDLabel'=>(string)$id,
                 'enabled'=>isset($selected[$id]) ? (bool)($selected[$id]['enabled'] ?? true) : true,
                 'linkName'=>(string)($selected[$id]['linkName'] ?? $this->SuggestedLinkName((int)$id,$name)),
                 'sourceName'=>$name
@@ -79,7 +80,7 @@ class ManagedDevice extends IPSModule
                         ['caption'=>'Verlinken','name'=>'enabled','width'=>'85px','edit'=>['type'=>'CheckBox']],
                         ['caption'=>'Linkname','name'=>'linkName','width'=>'35%','edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Quellname','name'=>'sourceName','width'=>'45%','edit'=>['type'=>'Label']],
-                        ['caption'=>'Quell-ID','name'=>'sourceID','width'=>'90px','edit'=>['type'=>'Label']]
+                        ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'90px','edit'=>['type'=>'Label']]
                     ],
                     'values'=>$rows
                 ]
@@ -103,6 +104,8 @@ class ManagedDevice extends IPSModule
         }
         foreach ($saved as $row) {
             $sourceID = (int)($row['sourceID'] ?? 0);
+            // Older UI revisions could omit the read-only ID field on row edits.
+            // Never re-target links based on a display name.
             if (!$sourceID || !isset($sourceVars[$sourceID])) continue;
             $enabled = (bool)($row['enabled'] ?? true);
             if (!$enabled) continue; // Disabling never destroys existing links automatically.
