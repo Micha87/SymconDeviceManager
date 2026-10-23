@@ -41,6 +41,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('DeviceListSearch', '');
         $this->RegisterAttributeString('ExistingDeviceSearch', '');
         $this->RegisterAttributeInteger('ManageDeviceID', 0);
+        $this->RegisterAttributeString('ManagedEditDraft', '{}');
 
     }
 
@@ -593,20 +594,72 @@ class DeviceManager extends IPSModule
                 'source'=>$variableID.' · '.IPS_GetName($variableID),
                 'target'=>isset($linked[$variableID]) ? (string)$linked[$variableID].' · '.IPS_GetName($linked[$variableID]) : 'Nicht verlinkt'];
         }
+        $drafts = json_decode($this->ReadAttributeString('ManagedEditDraft'),true);
+        $draft = is_array($drafts) ? ($drafts[(string)$deviceID] ?? []) : [];
         $form = $this->GetDeviceDialogForm($deviceID);
         $form[0] = ['type'=>'Label','caption'=>'Gerät: '.$device['name'].' ('.$deviceID.') | Dummy: '.$dummy];
+        foreach (['floor'=>1,'room'=>2,'trade'=>3] as $field=>$index) {
+            $form[$index]['value'] = $draft[$field] ?? $a[$field];
+            $form[$index]['onChange'] = 'SDM_SetManagedEditField($id, '.$deviceID.', "'.$field.'", $'.$field.');';
+        }
         $form[4]['values'] = $rows;
         $form[4]['columns'] = [
-            ['caption'=>'Verlinken','name'=>'enabled','width'=>'80px','edit'=>['type'=>'CheckBox']],
-            ['caption'=>'Variable','name'=>'name','width'=>'30%','save'=>true],
+            ['caption'=>'Verlinken','name'=>'enabled','width'=>'75px','edit'=>['type'=>'CheckBox']],
+            ['caption'=>'Variable','name'=>'name','width'=>'30%'],
             ['caption'=>'Quelle (ID / Name)','name'=>'source','width'=>'30%'],
             ['caption'=>'Ziel-Link (ID / Name)','name'=>'target','width'=>'30%']
         ];
         array_splice($form,1,0,[
             ['type'=>'Label','caption'=>'Quelle: '.$device['path'].' / '.$device['name']],
-            ['type'=>'Label','caption'=>'Ziel: '.implode(' / ',array_filter([$a['floor'],$a['room'],$a['trade'],$device['name']]))]
+            ['type'=>'Label','caption'=>'Ziel: '.implode(' / ',array_filter([$a['floor'],$a['room'],$a['trade'],$device['name']]))],
+            ['type'=>'Label','caption'=>'Raum/Gewerk ändern: Auswahl speichern und dann mit dem Button verschieben. Dummy- und Link-IDs bleiben erhalten.'],
+            ['type'=>'Button','caption'=>'Gerät in gewählten Raum / Gewerk verschieben','onClick'=>'SDM_MoveManagedDevice($id, '.$deviceID.');']
         ]);
         return $form;
+    }
+
+    public function SetManagedEditField(int $deviceID, string $field, string $value)
+    {
+        if (!in_array($field,['floor','room','trade'],true)) throw new Exception('Ungültiges Feld');
+        $drafts = json_decode($this->ReadAttributeString('ManagedEditDraft'),true);
+        if (!is_array($drafts)) $drafts = [];
+        $drafts[(string)$deviceID][$field] = trim($value);
+        $this->WriteAttributeString('ManagedEditDraft',json_encode($drafts,JSON_UNESCAPED_UNICODE));
+    }
+
+    public function MoveManagedDevice(int $deviceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) throw new Exception('Gerät nicht gefunden');
+        $device = $devices[(string)$deviceID];
+        $a = $this->DeviceAssignment($deviceID,$device);
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        if (!$root || !IPS_ObjectExists($root)) throw new Exception('Zielwurzel fehlt');
+        $oldFloor = $this->FindCategoryByName($root,$a['floor']);
+        $oldRoom = $oldFloor ? $this->FindCategoryByName($oldFloor,$a['room']) : 0;
+        $oldTrade = $oldRoom ? $this->FindCategoryByName($oldRoom,$a['trade']) : 0;
+        $dummy = $oldTrade ? $this->FindDeviceDummy($oldTrade,$device['name']) : 0;
+        if (!$dummy) throw new Exception('Bestehender Dummy nicht gefunden');
+        $drafts = json_decode($this->ReadAttributeString('ManagedEditDraft'),true);
+        $changes = is_array($drafts) ? ($drafts[(string)$deviceID] ?? []) : [];
+        foreach (['floor','room','trade'] as $field) {
+            if (isset($changes[$field])) $a[$field] = trim($changes[$field]);
+            if ($a[$field] === '' || $a[$field] === 'Unbekannt' || strpos($a[$field],'/') !== false) throw new Exception('Ungültige Zuordnung: '.$field);
+        }
+        $floor = $this->FindCategoryByName($root,$a['floor']);
+        $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
+        $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
+        if (!$trade) throw new Exception('Zielraum oder Gewerk existiert noch nicht. Bitte Zielstruktur zuerst anlegen.');
+        $collision = $this->FindDeviceDummy($trade,$device['name']);
+        if ($collision && $collision !== $dummy) throw new Exception('Im Ziel existiert bereits ein gleichnamiger Dummy.');
+        IPS_SetParent($dummy,$trade);
+        $all = json_decode($this->ReadAttributeString('DeviceAssignments'),true);
+        if (!is_array($all)) $all = [];
+        $all[(string)$deviceID] = $a;
+        $this->WriteAttributeString('DeviceAssignments',json_encode($all,JSON_UNESCAPED_UNICODE));
+        unset($drafts[(string)$deviceID]);
+        $this->WriteAttributeString('ManagedEditDraft',json_encode($drafts,JSON_UNESCAPED_UNICODE));
+        $this->ReloadForm();
     }
 
     private function BuildLinkManagement(): array
