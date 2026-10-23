@@ -138,11 +138,9 @@ class DeviceManager extends IPSModule
                 $deviceSearch,
                 $draftList,
                 $testEditor,
-                ['type' => 'ExpansionPanel', 'caption' => 'Testgerät erstellen – Klima Wohnzimmer (52319)', 'items' => [
-                    ['type' => 'Label', 'caption' => 'Nur Shelly Klima Wohnzimmer (52319). Erst Etage, Raum und Gewerk in der Geräteliste bearbeiten und Änderungen übernehmen. Variablen im Geräteeditor wählen. Hardware bleibt unverändert.'],
-                    ['type' => 'CheckBox', 'name' => 'ConfirmPilotCreation', 'caption' => 'Ich bestätige die Erstellung des Testgeräts mit den ausgewählten Variablen in Gebäude_neu', 'value' => $this->ReadAttributeBoolean('ConfirmPilotCreation'), 'onChange' => 'SDM_SetPilotCreationConfirmation($id, $ConfirmPilotCreation);'],
-                    ['type' => 'Button', 'caption' => 'TESTGERÄT JETZT ERSTELLEN', 'onClick' => 'SDM_CreatePilotDevice($id);']
-                ]]
+                ['type' => 'Label', 'caption' => 'Gerät in der oberen Liste per Checkbox markieren, Änderungen übernehmen und dann die Erstellung bestätigen. Im ersten Test ist nur Klima Wohnzimmer (52319) freigegeben.'],
+                ['type' => 'CheckBox', 'name' => 'ConfirmPilotCreation', 'caption' => 'Ausgewähltes Testgerät in Gebäude_neu erstellen (Bestätigung)', 'value' => $this->ReadAttributeBoolean('ConfirmPilotCreation'), 'onChange' => 'SDM_SetPilotCreationConfirmation($id, $ConfirmPilotCreation);'],
+                ['type' => 'Button', 'caption' => 'MARKIERTES TESTGERÄT ERSTELLEN', 'onClick' => 'SDM_CreatePilotDevice($id);']
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
@@ -502,7 +500,7 @@ class DeviceManager extends IPSModule
             $haystack = $device['name'] . ' ' . $device['path'] . ' ' . $id . ' ' . $a['floor'] . ' ' . $a['room'] . ' ' . $a['trade'];
             if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false) continue;
             $saved[] = ['deviceID' => (int) $id, 'floor' => $a['floor'], 'room' => $a['room'],
-                'trade' => $a['trade'], 'variableCount' => count($device['functions'])];
+                'trade' => $a['trade'], 'variableCount' => count($device['functions']), 'create' => false];
             $deviceOptions[] = ['caption' => $device['name'] . ' | ' . $device['path'], 'value' => (int) $id];
         }
         $tradeOptions = [];
@@ -513,6 +511,7 @@ class DeviceManager extends IPSModule
             'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' offen, ' . $hidden . ' bereits verlinkt ausgeblendet',
             'rowCount' => 18, 'add' => true, 'delete' => false, 'width' => '100%',
             'columns' => [
+                ['caption' => 'Erstellen', 'name' => 'create', 'width' => '85px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
                 ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '40%', 'add' => 0, 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
                 ['caption' => 'Etage', 'name' => 'floor', 'width' => '12%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
                 ['caption' => 'Raum', 'name' => 'room', 'width' => '18%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
@@ -854,6 +853,12 @@ class DeviceManager extends IPSModule
         if ($assignment['floor'] !== 'EG' || $assignment['room'] !== 'Wohnzimmer' || $assignment['trade'] !== 'Heizung') {
             throw new Exception('Testgerät muss EG / Wohnzimmer / Heizung zugeordnet sein. Bitte zuerst die Zuordnung speichern.');
         }
+        $rows = json_decode($this->ReadPropertyString('DeviceDraftRows'), true);
+        $marked = [];
+        foreach (is_array($rows) ? $rows : [] as $row) {
+            if (!empty($row['create'])) $marked[] = (int) ($row['deviceID'] ?? 0);
+        }
+        if ($marked !== [52319]) throw new Exception('Für diesen Test bitte ausschließlich Klima Wohnzimmer (52319) in der oberen Liste markieren und Änderungen übernehmen.');
         $this->WriteAttributeString('DeviceSelections', json_encode(['52319' => true]));
         try {
             $this->ApplyDeviceSelection();
