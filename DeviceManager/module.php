@@ -39,6 +39,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeBoolean('ShowExistingDevices', false);
         $this->RegisterPropertyString('DeviceDraftRows', '[]');
         $this->RegisterAttributeString('DeviceListSearch', '');
+        $this->RegisterAttributeBoolean('ConfirmPilotCreation', false);
     }
 
     public function ApplyChanges()
@@ -133,10 +134,15 @@ class DeviceManager extends IPSModule
                         ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
                     ])]
                 ]],
-                ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Vorerst nur Vorschau, keine Erstellung.'],
+                ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Die Geräteerstellung ist nur für das ausdrücklich bestätigte Testgerät freigeschaltet.'],
                 $deviceSearch,
                 $draftList,
-                $testEditor
+                $testEditor,
+                ['type' => 'ExpansionPanel', 'caption' => 'Testgerät erstellen – Klima Wohnzimmer (52319)', 'items' => [
+                    ['type' => 'Label', 'caption' => 'Nur Shelly Klima Wohnzimmer (52319). Erst Etage, Raum und Gewerk in der Geräteliste bearbeiten und Änderungen übernehmen. Variablen im Geräteeditor wählen. Hardware bleibt unverändert.'],
+                    ['type' => 'CheckBox', 'name' => 'ConfirmPilotCreation', 'caption' => 'Ich bestätige die Erstellung des Testgeräts mit den ausgewählten Variablen in Gebäude_neu', 'value' => $this->ReadAttributeBoolean('ConfirmPilotCreation'), 'onChange' => 'SDM_SetPilotCreationConfirmation($id, $ConfirmPilotCreation);'],
+                    ['type' => 'Button', 'caption' => 'TESTGERÄT JETZT ERSTELLEN', 'onClick' => 'SDM_CreatePilotDevice($id);']
+                ]]
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
@@ -826,6 +832,34 @@ class DeviceManager extends IPSModule
         if ($enabled) $selected[(string) $deviceID] = true;
         else unset($selected[(string) $deviceID]);
         $this->WriteAttributeString('DeviceSelections', json_encode($selected));
+    }
+
+    public function SetPilotCreationConfirmation(bool $confirmed)
+    {
+        $this->WriteAttributeBoolean('ConfirmPilotCreation', $confirmed);
+    }
+
+    public function CreatePilotDevice()
+    {
+        if (!$this->ReadAttributeBoolean('ConfirmPilotCreation')) {
+            throw new Exception('Bitte die Erstellung des Testgeräts zuerst ausdrücklich bestätigen.');
+        }
+        // Confirmation is single-use, including when validation fails.
+        $this->WriteAttributeBoolean('ConfirmPilotCreation', false);
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        if ($root !== 58840) throw new Exception('Testlauf nur für Gebäude_neu (58840) freigegeben.');
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices['52319'])) throw new Exception('Shelly Klima Wohnzimmer (52319) nicht gefunden.');
+        $assignment = $this->DeviceAssignment(52319, $devices['52319']);
+        if ($assignment['floor'] !== 'EG' || $assignment['room'] !== 'Wohnzimmer' || $assignment['trade'] !== 'Heizung') {
+            throw new Exception('Testgerät muss EG / Wohnzimmer / Heizung zugeordnet sein. Bitte zuerst die Zuordnung speichern.');
+        }
+        $this->WriteAttributeString('DeviceSelections', json_encode(['52319' => true]));
+        try {
+            $this->ApplyDeviceSelection();
+        } finally {
+            $this->WriteAttributeString('DeviceSelections', '{}');
+        }
     }
 
     public function ApplyDeviceSelection()
