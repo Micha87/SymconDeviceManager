@@ -463,6 +463,12 @@ class DeviceManager extends IPSModule
         $this->UpdateFormField('DeviceDraftRows', 'caption', $list['caption']);
     }
 
+    public function OpenDraftDeviceEditor(int $deviceID)
+    {
+        $this->OpenDeviceEditor($deviceID);
+        $this->UpdateFormField('UniversalDeviceSelect', 'value', $deviceID);
+    }
+
     private function BuildDeviceDraftList()
     {
         $devices = $this->DiscoverPilotDevices();
@@ -524,7 +530,31 @@ class DeviceManager extends IPSModule
     {
         $rows = json_decode($rowsJSON, true);
         if (!is_array($rows)) return;
-        $this->WriteAttributeString('DeviceDraftRows', json_encode($rows, JSON_UNESCAPED_UNICODE));
+        $devices = $this->DiscoverPilotDevices();
+        $savedAssignments = json_decode($this->ReadAttributeString('DeviceAssignments'), true);
+        if (!is_array($savedAssignments)) $savedAssignments = [];
+        $updated = 0;
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $deviceID = (int) ($row['deviceID'] ?? 0);
+            if ($deviceID <= 0 || !isset($devices[(string) $deviceID])) continue;
+            $device = $devices[(string) $deviceID];
+            $current = $this->DeviceAssignment($deviceID, $device);
+            $next = $current;
+            foreach (['floor', 'room', 'trade'] as $field) {
+                if (isset($row[$field]) && is_string($row[$field])) {
+                    $candidate = trim($row[$field]);
+                    if ($candidate !== '' && $candidate !== $current[$field]) $next[$field] = $candidate;
+                }
+            }
+            if ($next !== $current) {
+                $savedAssignments[(string) $deviceID] = $next;
+                $updated++;
+            }
+        }
+        if ($updated > 0) {
+            $this->WriteAttributeString('DeviceAssignments', json_encode($savedAssignments, JSON_UNESCAPED_UNICODE));
+        }
     }
 
     public function DeleteDeviceDraft(string $rowsJSON)
