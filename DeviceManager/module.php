@@ -1,8 +1,8 @@
 <?php
 /**
- * Symcon Device Manager 0.3 - discovery and explicit category management.
+ * Symcon Device Manager 0.4 - configurable KNX category import.
  * Discovers hardware datapoints and proposes room/device/function mappings.
- * Only explicitly requested new-building category creation is permitted; no moves, links or hardware commands.
+ * Creates device dummies and links only after explicit checkbox selection; never moves hardware.
  */
 class DeviceManager extends IPSModule
 {
@@ -12,6 +12,8 @@ class DeviceManager extends IPSModule
         $this->RegisterPropertyInteger('HardwareRoot', 10094);
         $this->RegisterPropertyInteger('BuildingRoot', 28329);
         $this->RegisterPropertyInteger('ManagedBuildingRoot', 58840);
+        $this->RegisterPropertyInteger('DeviceSourceCategory', 57856);
+        $this->RegisterPropertyInteger('DeviceTargetCategory', 27803);
         $this->RegisterPropertyString('RoomAliases', json_encode([
             'wohnzim' => 'EG/Wohnzimmer', 'wohnzimmer' => 'EG/Wohnzimmer',
             'kü' => 'EG/Küche', 'kueche' => 'EG/Küche', 'küche' => 'EG/Küche',
@@ -87,10 +89,12 @@ class DeviceManager extends IPSModule
         };
         return json_encode([
             'elements' => [
-                ['type' => 'Label', 'caption' => 'Prototyp 0.2: Hardware und Bestandsstruktur lesen, Geräte gruppieren. Keine Objektänderungen.'],
+                ['type' => 'Label', 'caption' => 'Version 0.4: Gebäudeverwaltung und auswählbare Geräteübernahme mit Dummys und Links.'],
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'ManagedBuildingRoot', 'caption' => 'Neue Gebäudestruktur (Ziel-ID)'],
+                ['type' => 'NumberSpinner', 'name' => 'DeviceSourceCategory', 'caption' => 'Gerätequelle (Hardware-Kategorie-ID)'],
+                ['type' => 'NumberSpinner', 'name' => 'DeviceTargetCategory', 'caption' => 'Geräteziel (Gewerk-Kategorie-ID)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
                 ['type' => 'Select', 'name' => 'FilterFloor', 'value' => $filterFloor, 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $FilterFloor);'],
                 ['type' => 'Select', 'name' => 'FilterRoom', 'value' => $filterRoom, 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $FilterRoom);'],
@@ -126,8 +130,8 @@ class DeviceManager extends IPSModule
                         ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
                     ])]
                 ]],
-                ['type' => 'ExpansionPanel', 'caption' => 'Geräteübernahme – KNX Wohnzimmer (Vorschau und Auswahl)', 'items' => array_merge([
-                    ['type' => 'Label', 'caption' => 'Quelle: Hardware/KNX/Beleuchtung/Wohnzimmer (57856). Ziel: Gebäude_neu/EG/Wohnzimmer/Beleuchtung. Hardware wird nicht verändert.'],
+                ['type' => 'ExpansionPanel', 'caption' => 'Geräteübernahme – KNX (Vorschau und Auswahl)', 'items' => array_merge([
+                    ['type' => 'Label', 'caption' => 'Quelle und Ziel werden über die Kategorie-IDs oben eingestellt. Es werden nur direkte Geräte und Dummy-Gruppen gelesen; Unterkategorien mit Skripten bleiben unberücksichtigt.'],
                     ['type' => 'Button', 'caption' => 'Geräte neu erkennen', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);']
                 ], $deviceItems, [
                     ['type' => 'Button', 'caption' => 'Ausgewählte Geräte als Dummys und Links anlegen', 'onClick' => 'SDM_ApplyDeviceSelection($id);']
@@ -263,12 +267,12 @@ class DeviceManager extends IPSModule
     }
 
     /**
-     * KNX pilot: existing direct KNX instances and grouped instances below
-     * Hardware/KNX/Beleuchtung/Wohnzimmer. No script/function folder import.
+     * Configurable KNX source category: direct instances and dummy groups.
+     * Categories (including script folders) are ignored.
      */
     private function DiscoverPilotDevices()
     {
-        $root = 57856;
+        $root = $this->ReadPropertyInteger('DeviceSourceCategory');
         if (!IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) return [];
         $devices = [];
         foreach (IPS_GetChildrenIDs($root) as $id) {
@@ -276,6 +280,7 @@ class DeviceManager extends IPSModule
             if ($obj['ObjectType'] !== 1) continue; // Kategorien wie Scripte_Funktionen ignorieren
             $isDummy = (IPS_GetInstance($id)['ModuleInfo']['ModuleID'] ?? '') === '{485D0419-BE97-4548-AA9C-C083EB82E61E}';
             $name = $isDummy ? $obj['ObjectName'] : preg_replace('/_(s|d|w)$/iu', '', $obj['ObjectName']);
+            if (!$isDummy) $name = preg_replace('/^Bel\\.[^.]+\\./iu', '', $name);
             $members = $isDummy ? IPS_GetChildrenIDs($id) : [$id];
             $functions = [];
             foreach ($members as $member) {
@@ -301,10 +306,15 @@ class DeviceManager extends IPSModule
     private function GetPilotTarget()
     {
         $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
-        if ($root <= 0 || !IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) return 0;
-        $floor = $this->FindCategoryByName($root, 'EG');
-        $room = $floor ? $this->FindCategoryByName($floor, 'Wohnzimmer') : 0;
-        return $room ? $this->FindCategoryByName($room, 'Beleuchtung') : 0;
+        $target = $this->ReadPropertyInteger('DeviceTargetCategory');
+        if ($root <= 0 || $target <= 0 || !IPS_ObjectExists($root) || !IPS_ObjectExists($target)) return 0;
+        if (IPS_GetObject($root)['ObjectType'] !== 0 || IPS_GetObject($target)['ObjectType'] !== 0) return 0;
+        $cursor = $target;
+        for ($depth = 0; $depth < 20 && $cursor > 0; $depth++) {
+            if ($cursor === $root) return $target;
+            $cursor = IPS_GetParent($cursor);
+        }
+        return 0; // refuse writes outside managed building root
     }
 
     private function FindDeviceDummy($parent, $name)
@@ -326,7 +336,7 @@ class DeviceManager extends IPSModule
         $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
         if (!is_array($selected)) $selected = [];
         $controls = [];
-        if (!$target) $controls[] = ['type' => 'Label', 'caption' => 'Ziel EG/Wohnzimmer/Beleuchtung fehlt. Bitte erst Gebäudestruktur anlegen.'];
+        if (!$target) $controls[] = ['type' => 'Label', 'caption' => 'Zielkategorie fehlt oder liegt nicht unter der verwalteten Gebäudestruktur.'];
         foreach ($devices as $id => $device) {
             $dummy = $target ? $this->FindDeviceDummy($target, $device['name']) : 0;
             $functions = implode(', ', array_map(static function ($name, $variable) {
@@ -343,7 +353,7 @@ class DeviceManager extends IPSModule
                 ];
             }
         }
-        if (!$devices) $controls[] = ['type' => 'Label', 'caption' => 'Keine Geräte unter Hardware-Kategorie 57856 erkannt.'];
+        if (!$devices) $controls[] = ['type' => 'Label', 'caption' => 'Keine direkten KNX-Geräte in der gewählten Quellkategorie erkannt.'];
         return $controls;
     }
 
@@ -359,7 +369,7 @@ class DeviceManager extends IPSModule
     public function ApplyDeviceSelection()
     {
         $target = $this->GetPilotTarget();
-        if (!$target) throw new Exception('Ziel EG/Wohnzimmer/Beleuchtung fehlt.');
+        if (!$target) throw new Exception('Zielkategorie fehlt oder liegt nicht unter der verwalteten Gebäudestruktur.');
         $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
         if (!is_array($selected) || !$selected) throw new Exception('Bitte mindestens ein Gerät auswählen.');
         $devices = $this->DiscoverPilotDevices();
