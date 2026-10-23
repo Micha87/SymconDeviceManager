@@ -134,7 +134,8 @@ class DeviceManager extends IPSModule
                 ]],
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
-                $draftList
+                $draftList,
+                $this->BuildExistingDeviceList()
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
@@ -521,6 +522,34 @@ class DeviceManager extends IPSModule
         $a = $this->DeviceAssignment($deviceID, $devices[(string)$deviceID]);
         foreach (['floor','room','trade'] as $field) $this->UpdateFormField($field, 'value', $a[$field]);
         $this->UpdateFormField('selectedVariables','values',json_encode($this->DeviceDialogVariables($deviceID), JSON_UNESCAPED_UNICODE));
+    }
+
+    private function BuildExistingDeviceList(): array
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $rows = [];
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        foreach ($devices as $id => $device) {
+            $a = $this->DeviceAssignment($id, $device);
+            $floor = $this->FindCategoryByName($root, $a['floor']);
+            $room = $floor ? $this->FindCategoryByName($floor, $a['room']) : 0;
+            $trade = $room ? $this->FindCategoryByName($room, $a['trade']) : 0;
+            $dummy = $trade ? $this->FindDeviceDummy($trade, $device['name']) : 0;
+            if (!$dummy) continue;
+            $links = 0;
+            foreach (IPS_GetChildrenIDs($dummy) as $child) {
+                if (IPS_GetObject($child)['ObjectType'] === 6) $links++;
+            }
+            $rows[] = ['deviceID'=>(int)$id, 'name'=>$device['name'], 'room'=>$a['floor'].' / '.$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
+        }
+        return ['type'=>'List','name'=>'ExistingDevices','caption'=>'Bereits angelegte Geräte – Variablenbestand','rowCount'=>10,'add'=>false,'delete'=>false,
+            'columns'=>[
+                ['caption'=>'Gerät','name'=>'name','width'=>'35%'],
+                ['caption'=>'Raum','name'=>'room','width'=>'25%'],
+                ['caption'=>'Gewerk','name'=>'trade','width'=>'20%'],
+                ['caption'=>'Dummy-ID','name'=>'dummyID','width'=>'90px'],
+                ['caption'=>'Links','name'=>'links','width'=>'70px']
+            ],'values'=>$rows];
     }
 
     private function BuildDeviceDraftList()
