@@ -103,7 +103,7 @@ class DeviceManager extends IPSModule
                 ]
             ],
             'actions' => [
-                ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id);'],
+                ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
                 ['type' => 'Label', 'caption' => 'Nach dem Scan die Konfiguration erneut öffnen, um die Vorschläge zu sehen.']
             ]
         ], JSON_UNESCAPED_UNICODE);
@@ -129,6 +129,15 @@ class DeviceManager extends IPSModule
         $this->WriteAttributeString('LastScan', json_encode($rows, JSON_UNESCAPED_UNICODE));
         $this->SendDebug('Scan', count($rows) . ' Kandidaten', 0);
         return count($rows);
+    }
+
+    public function RequestAction($Ident, $Value)
+    {
+        if ($Ident === 'RefreshForm') {
+            $this->ReloadForm();
+            return;
+        }
+        throw new Exception('Unknown action: ' . $Ident);
     }
 
     public function GetPreviewJSON()
