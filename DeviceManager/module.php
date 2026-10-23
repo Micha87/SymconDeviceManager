@@ -28,6 +28,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('BuildingPlan', '{}');
         $this->RegisterAttributeString('DraftFloor', '');
         $this->RegisterAttributeString('DraftRoom', '');
+        $this->RegisterAttributeString('ImportSelections', '{}');
     }
 
     public function ApplyChanges()
@@ -77,6 +78,7 @@ class DeviceManager extends IPSModule
             if (count($roomNames) === 0) $planRows[] = ['floor' => $floor, 'room' => '(noch keine Räume)'];
             foreach ($roomNames as $roomName) $planRows[] = ['floor' => $floor, 'room' => $roomName];
         }
+        $importItems = $this->BuildImportControls();
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
         };
@@ -88,8 +90,8 @@ class DeviceManager extends IPSModule
                 ['type' => 'NumberSpinner', 'name' => 'ManagedBuildingRoot', 'caption' => 'Neue Gebäudestruktur (Ziel-ID)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
                 ['type' => 'Select', 'name' => 'FilterFloor', 'value' => $filterFloor, 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $FilterFloor);'],
-                ['type' => Select, 'name' => 'FilterRoom', 'value' => $filterRoom, 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $FilterRoom);'],
-                ['type' => Select, 'name' => 'FilterType', 'value' => $filterType, 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types), 'onChange' => 'SDM_SetLiveFilter($id, "Type", $FilterType);'],
+                ['type' => 'Select', 'name' => 'FilterRoom', 'value' => $filterRoom, 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $FilterRoom);'],
+                ['type' => 'Select', 'name' => 'FilterType', 'value' => $filterType, 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types), 'onChange' => 'SDM_SetLiveFilter($id, "Type", $FilterType);'],
                 ['type' => 'ValidationTextBox', 'name' => 'FilterText', 'value' => $filterText, 'caption' => 'Freitext (Name / ID / Funktion)', 'onChange' => 'SDM_SetLiveFilter($id, "Text", $FilterText);'],
                 ['type' => 'Label', 'caption' => count($filtered) . ' von ' . count($rows) . ' Datenpunkten sichtbar. Filter aktualisieren die Ansicht ohne Schließen (Freitext nach Eingabebestätigung).'],
                 ['type' => 'Label', 'caption' => count($grouped) . ' erkannte Gerätegruppen (vorläufig; Zuordnungen prüfen)'],
@@ -112,7 +114,13 @@ class DeviceManager extends IPSModule
                     ['type' => 'Button', 'caption' => 'Raum hinzufügen', 'onClick' => 'SDM_EditBuildingPlan($id, "AddRoom");'],
                     ['type' => 'Button', 'caption' => 'Raum entfernen (Entwurf)', 'onClick' => 'SDM_EditBuildingPlan($id, "RemoveRoom");'],
                     ['type' => 'Button', 'caption' => 'Etage entfernen (nur wenn leer)', 'onClick' => 'SDM_EditBuildingPlan($id, "RemoveFloor");'],
-                    ['type' => 'Button', 'caption' => 'Bestehende Etagen/Räume importieren (Entwurf)', 'onClick' => 'SDM_ImportBuildingPlan($id);']
+                    ['type' => 'Button', 'caption' => 'Bestehende Etagen/Räume importieren (Entwurf)', 'onClick' => 'SDM_ImportBuildingPlan($id);'],
+                    ['type' => 'ExpansionPanel', 'caption' => 'Vorhandene Struktur übernehmen (mit Auswahl)', 'items' => array_merge([
+                        ['type' => 'Label', 'caption' => 'Quelle: bestehende Gebäude-Kategorie. Etagen, Räume und Gewerke einzeln auswählen. Keine vorhandenen Objekte werden verschoben.'],
+                        ['type' => 'Button', 'caption' => 'Vorschläge aktualisieren', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);'],
+                    ], $importItems, [
+                        ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
+                    ])]
                 ]],
                 ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
                     'rowCount' => 12, 'add' => false, 'delete' => false,
@@ -241,6 +249,85 @@ class DeviceManager extends IPSModule
             } else throw new Exception('Unbekannte Aktion');
         }
         $this->WriteAttributeString('BuildingPlan', json_encode($plan, JSON_UNESCAPED_UNICODE));
+        $this->ReloadForm();
+    }
+
+    private function BuildImportControls()
+    {
+        $source = $this->ReadPropertyInteger('BuildingRoot');
+        $target = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        if ($source <= 0 || !IPS_ObjectExists($source) || $source === $target) return [
+            ['type' => 'Label', 'caption' => 'Quellstruktur fehlt oder entspricht der Zielstruktur.']
+        ];
+        $selected = json_decode($this->ReadAttributeString('ImportSelections'), true);
+        if (!is_array($selected)) $selected = [];
+        $controls = [];
+        $count = 0;
+        foreach (IPS_GetChildrenIDs($source) as $floorID) {
+            if (IPS_GetObject($floorID)['ObjectType'] !== 0) continue;
+            $floor = IPS_GetName($floorID);
+            foreach (IPS_GetChildrenIDs($floorID) as $roomID) {
+                if (IPS_GetObject($roomID)['ObjectType'] !== 0) continue;
+                $room = IPS_GetName($roomID);
+                $key = (string) $roomID;
+                $controls[] = [
+                    'type' => 'CheckBox', 'name' => 'ImportSelect_' . $roomID,
+                    'caption' => $floor . ' / ' . $room,
+                    'value' => !empty($selected[$key]),
+                    'onChange' => 'SDM_SetImportSelection($id, ' . $roomID . ', $ImportSelect_' . $roomID . ');'
+                ];
+                $count++;
+                if ($count >= 200) break 2;
+            }
+        }
+        if ($count >= 200) $controls[] = ['type' => 'Label', 'caption' => 'Anzeige auf 200 Räume begrenzt.'];
+        if ($count === 0) $controls[] = ['type' => 'Label', 'caption' => 'Keine Räume in der Quellstruktur gefunden.'];
+        return $controls;
+    }
+
+    public function SetImportSelection($roomID, $enabled)
+    {
+        $selected = json_decode($this->ReadAttributeString('ImportSelections'), true);
+        if (!is_array($selected)) $selected = [];
+        if ($enabled) $selected[(string) $roomID] = true;
+        else unset($selected[(string) $roomID]);
+        $this->WriteAttributeString('ImportSelections', json_encode($selected));
+    }
+
+    public function ApplyImportSelection()
+    {
+        $source = $this->ReadPropertyInteger('BuildingRoot');
+        $target = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        if ($source <= 0 || $target <= 0 || !IPS_ObjectExists($source) || !IPS_ObjectExists($target) || $source === $target) {
+            throw new Exception('Quell- und Zielkategorie müssen gültig und verschieden sein.');
+        }
+        if (IPS_GetObject($source)['ObjectType'] !== 0 || IPS_GetObject($target)['ObjectType'] !== 0) {
+            throw new Exception('Quelle und Ziel müssen Kategorien sein.');
+        }
+        if ($target === $this->ReadPropertyInteger('HardwareRoot')) throw new Exception('Hardware darf kein Ziel sein.');
+        $selected = json_decode($this->ReadAttributeString('ImportSelections'), true);
+        if (!is_array($selected) || count($selected) === 0) throw new Exception('Bitte mindestens einen Raum auswählen.');
+        $valid = [];
+        foreach (IPS_GetChildrenIDs($source) as $floorID) {
+            if (IPS_GetObject($floorID)['ObjectType'] !== 0) continue;
+            foreach (IPS_GetChildrenIDs($floorID) as $roomID) {
+                if (IPS_GetObject($roomID)['ObjectType'] !== 0) continue;
+                $valid[(string) $roomID] = [$floorID, $roomID];
+            }
+        }
+        foreach (array_keys($selected) as $key) {
+            if (!isset($valid[$key])) continue;
+            [$floorID, $roomID] = $valid[$key];
+            $floorName = IPS_GetName($floorID);
+            $roomName = IPS_GetName($roomID);
+            $newFloor = $this->FindOrCreateCategory($target, $floorName);
+            $newRoom = $this->FindOrCreateCategory($newFloor, $roomName);
+            foreach (IPS_GetChildrenIDs($roomID) as $tradeID) {
+                $trade = IPS_GetObject($tradeID);
+                if ($trade['ObjectType'] === 0) $this->FindOrCreateCategory($newRoom, $trade['ObjectName']);
+            }
+        }
+        $this->WriteAttributeString('ImportSelections', '{}');
         $this->ReloadForm();
     }
 
