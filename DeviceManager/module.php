@@ -554,12 +554,16 @@ class DeviceManager extends IPSModule
             foreach (IPS_GetChildrenIDs($dummy) as $child) {
                 if (IPS_GetObject($child)['ObjectType'] === 6) $links++;
             }
-            $rows[] = ['deviceID'=>(int)$id, 'name'=>$device['name'], 'room'=>$a['floor'].' / '.$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
+            $aliasTrade = ['Beleuchtung'=>'Bel.', 'Heizung'=>'Hzg.', 'Rollladen'=>'Rol.', 'Multimedia'=>'Med.', 'Steckdosen'=>'Steck.', 'Sensoren'=>'Sens.', 'Sonstige'=>'Sonst.'];
+            $aliasRoom = ['Wohnzimmer'=>'Wohn.', 'Schlafzimmer'=>'Schlaf.', 'Wintergarten'=>'Winterg.', 'Küche'=>'Kü.', 'Badezimmer'=>'Bad.', 'Kinderzimmer'=>'Kind.'];
+            $alias = ($aliasTrade[$a['trade']] ?? $a['trade']).'/'.$a['floor'].'/'.($aliasRoom[$a['room']] ?? $a['room']).'/';
+            $rows[] = ['deviceID'=>(int)$id, 'alias'=>$alias, 'name'=>$device['name'], 'room'=>$a['floor'].' / '.$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
         }
         return ['type'=>'List','name'=>'ExistingDevices','caption'=>'Bereits angelegte Geräte – Variablenbestand','rowCount'=>10,'add'=>false,'delete'=>false,
             'form'=>'return SDM_GetExistingDeviceDialogForm($id, (int)($ExistingDevices["deviceID"] ?? 0));',
             'columns'=>[
-                ['caption'=>'Gerät','name'=>'name','width'=>'35%'],
+                ['caption'=>'Alias','name'=>'alias','width'=>'18%'],
+                ['caption'=>'Gerät','name'=>'name','width'=>'27%'],
                 ['caption'=>'Raum','name'=>'room','width'=>'25%'],
                 ['caption'=>'Gewerk','name'=>'trade','width'=>'20%'],
                 ['caption'=>'Dummy-ID','name'=>'dummyID','width'=>'90px'],
