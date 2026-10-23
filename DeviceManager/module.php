@@ -98,6 +98,7 @@ class DeviceManager extends IPSModule
         $importItems = $this->BuildImportControls();
         $deviceItems = $this->BuildDeviceImportControls();
         $draftList = $this->BuildDeviceDraftList();
+        $nativeConfigurator = $this->BuildNativeDeviceConfigurator();
         $deviceSearch = ['type' => 'ValidationTextBox', 'name' => 'DeviceListSearch', 'caption' => 'Geräte filtern (Volltext)', 'value' => $this->ReadAttributeString('DeviceListSearch'), 'onChange' => 'SDM_SetDeviceListSearch($id, $DeviceListSearch);'];
         $selectOptions = static function ($items) {
             return array_map(static function ($item) { return ['caption' => $item, 'value' => $item]; }, $items);
@@ -140,7 +141,11 @@ class DeviceManager extends IPSModule
                 ]],
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
-                $draftList,
+                $nativeConfigurator,
+                ['type'=>'ExpansionPanel','caption'=>'Gerät bearbeiten oder mit ausgewählten Variablen anlegen','expanded'=>false,'items'=>[
+                    ['type'=>'Label','caption'=>'Gerät in der Bearbeitungsliste auswählen und über das Zahnrad öffnen. Die native Übersicht dient der Geräteanzeige und Gesehen/Ungesehen-Verwaltung.'],
+                    $draftList
+                ]],
                 ['type'=>'Button','caption'=>'Alles gesehen','onClick'=>'SDM_MarkAllSourceDevicesSeen($id);'],
                 ['type'=>'Button','caption'=>'Gesehene einblenden','onClick'=>'SDM_ShowSeenSourceDevices($id);'],
                 ['type'=>'Label','caption'=>'Neue Geräte grün, angelegte Geräte weiß. Bereits angelegte Geräte über das Zahnrad bearbeiten.']
@@ -480,6 +485,8 @@ class DeviceManager extends IPSModule
         $this->WriteAttributeString('DeviceListSearch', trim($search));
         $list = $this->BuildDeviceDraftList();
         $this->UpdateFormField('DeviceDiscoveryRows', 'values', json_encode($list['values'], JSON_UNESCAPED_UNICODE));
+        $native = $this->BuildNativeDeviceConfigurator();
+        $this->UpdateFormField('DeviceNativeConfigurator','values',json_encode($native['values'],JSON_UNESCAPED_UNICODE));
         $this->UpdateFormField('DeviceDiscoveryRows', 'caption', $list['caption']);
     }
 
@@ -1091,6 +1098,44 @@ class DeviceManager extends IPSModule
     {
         $this->WriteAttributeInteger('ManageDeviceID',$deviceID);
         $this->ReloadForm();
+    }
+
+    private function BuildNativeDeviceConfigurator(): array
+    {
+        $devices = $this->DiscoverPilotDevices();
+        $rows = [];
+        $search = trim($this->ReadAttributeString('DeviceListSearch'));
+        foreach ($devices as $id => $device) {
+            $a = $this->DeviceAssignment((int)$id,$device);
+            $dummy = $this->ManagedDummyID((int)$id,$device,$a);
+            $haystack = $device['name'].' '.$device['path'].' '.$id.' '.$a['floor'].' '.$a['room'].' '.$a['trade'];
+            if ($search !== '' && mb_stripos($haystack,$search,0,'UTF-8') === false) continue;
+            $rows[] = [
+                'id'=>(int)$id,
+                'deviceID'=>(int)$id,
+                'type'=>'Gerät',
+                'area'=>$a['floor'].' / '.$a['room'],
+                'device'=>$device['name'],
+                'source'=>$device['path'],
+                'trade'=>$a['trade'],
+                'variables'=>count($device['functions']),
+                'instanceID'=>$dummy ?: 0
+            ];
+        }
+        return [
+            'type'=>'Configurator','name'=>'DeviceNativeConfigurator','caption'=>'Gefundene Geräte',
+            'rowCount'=>18,
+            'columns'=>[
+                ['caption'=>'Typ','name'=>'type','width'=>'70px'],
+                ['caption'=>'Bereich','name'=>'area','width'=>'170px'],
+                ['caption'=>'Gerät','name'=>'device','width'=>'20%'],
+                ['caption'=>'Quelle','name'=>'source','width'=>'35%'],
+                ['caption'=>'Gewerk','name'=>'trade','width'=>'120px'],
+                ['caption'=>'Variablen','name'=>'variables','width'=>'90px'],
+                ['caption'=>'InstanzID','name'=>'instanceID','width'=>'90px']
+            ],
+            'values'=>$rows
+        ];
     }
 
     private function BuildDeviceDraftList()
