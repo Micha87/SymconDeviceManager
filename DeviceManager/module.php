@@ -1104,27 +1104,32 @@ class DeviceManager extends IPSModule
         $devices = $this->DiscoverPilotDevices();
         $rows = [];
         $search = trim($this->ReadAttributeString('DeviceListSearch'));
+        $managedBySource = [];
+        foreach (IPS_GetInstanceListByModuleID('{7C91D1A2-29C9-4DF7-86BD-BB23E4795C71}') as $managedID) {
+            $config = json_decode(IPS_GetConfiguration($managedID), true);
+            $sourceID = (int)($config['SourceInstanceID'] ?? 0);
+            if ($sourceID > 0 && !isset($managedBySource[$sourceID])) $managedBySource[$sourceID] = ['id'=>(int)$managedID, 'config'=>$config];
+        }
         foreach ($devices as $id => $device) {
             $a = $this->DeviceAssignment((int)$id,$device);
-            $dummy = $this->ManagedDummyID((int)$id,$device,$a);
-            $nativeInstance = 0;
-            foreach (IPS_GetInstanceListByModuleID('{7C91D1A2-29C9-4DF7-86BD-BB23E4795C71}') as $managedID) {
-                $settings = json_decode(IPS_GetConfiguration($managedID),true);
-                if ((int)($settings['SourceInstanceID'] ?? 0) === (int)$id) {
-                    $nativeInstance = (int)$managedID;
-                    break;
-                }
-            }
-            $haystack = $device['name'].' '.$device['path'].' '.$id.' '.$a['floor'].' '.$a['room'].' '.$a['trade'];
+            $managed = $managedBySource[(int)$id] ?? null;
+            $nativeInstance = (int)($managed['id'] ?? 0);
+            $settings = $managed['config'] ?? [];
+            $floor = $nativeInstance ? (string)($settings['Floor'] ?? $a['floor']) : (string)$a['floor'];
+            $room = $nativeInstance ? (string)($settings['Room'] ?? $a['room']) : (string)$a['room'];
+            $trade = $nativeInstance ? (string)($settings['Trade'] ?? $a['trade']) : (string)$a['trade'];
+            $deviceName = $nativeInstance ? IPS_GetName($nativeInstance) : (string)($a['deviceName'] ?? $device['name']);
+            $haystack = $deviceName.' '.$device['name'].' '.$device['path'].' '.$id.' '.$floor.' '.$room.' '.$trade;
             if ($search !== '' && mb_stripos($haystack,$search,0,'UTF-8') === false) continue;
             $rows[] = [
                 'id'=>(int)$id,
                 'deviceID'=>(int)$id,
                 'type'=>'Gerät',
-                'area'=>$a['floor'].' / '.$a['room'],
-                'device'=>(string)($nativeInstance > 0 ? IPS_GetName($nativeInstance) : ($a['deviceName'] ?? $device['name'])),
+                'floor'=>$floor,
+                'room'=>$room,
+                'device'=>$deviceName,
                 'source'=>$device['path'],
-                'trade'=>$a['trade'],
+                'trade'=>$trade,
                 'variables'=>count($device['functions']),
                 'instanceID'=>$nativeInstance,
                 'create'=>[
@@ -1143,11 +1148,12 @@ class DeviceManager extends IPSModule
             ];
         }
         return [
-            'type'=>'Configurator','name'=>'DeviceNativeConfigurator','caption'=>'Gefundene Geräte',
+            'type'=>'Configurator','name'=>'DeviceNativeConfigurator','caption'=>'Geräteübersicht – bestehende Geräte über das Instanzsymbol bearbeiten',
             'rowCount'=>18,
             'columns'=>[
                 ['caption'=>'Typ','name'=>'type','width'=>'70px'],
-                ['caption'=>'Bereich','name'=>'area','width'=>'170px'],
+                ['caption'=>'Etage','name'=>'floor','width'=>'100px'],
+                ['caption'=>'Raum','name'=>'room','width'=>'140px'],
                 ['caption'=>'Gerät','name'=>'device','width'=>'20%'],
                 ['caption'=>'Quelle','name'=>'source','width'=>'35%'],
                 ['caption'=>'Gewerk','name'=>'trade','width'=>'120px'],
