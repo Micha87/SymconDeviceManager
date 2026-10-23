@@ -528,6 +528,7 @@ class DeviceManager extends IPSModule
     {
         $rows = json_decode($rowsJSON,true);
         if (!is_array($rows)) throw new Exception('Variablenauswahl konnte nicht gelesen werden.');
+        if (isset($rows['variableID'])) $rows = [$rows];
         $devices = $this->DiscoverPilotDevices();
         if (!isset($devices[(string)$deviceID])) throw new Exception('Gerät nicht gefunden.');
         $valid = array_values($devices[(string)$deviceID]['functions']);
@@ -568,7 +569,10 @@ class DeviceManager extends IPSModule
 
     public function CreateDeviceFromDialog(int $deviceID, string $rowsJSON)
     {
-        $this->SaveDialogVariableSelection($deviceID,$rowsJSON);
+        $rows = json_decode($rowsJSON,true);
+        // Nested configuration List values are sometimes sent as [] by the button callback.
+        // In that case use the displayed default selection plus any persisted edits.
+        if (is_array($rows) && count($rows) > 0) $this->SaveDialogVariableSelection($deviceID,$rowsJSON);
         $this->CreateConfiguredDevice($deviceID);
     }
 
@@ -602,7 +606,7 @@ class DeviceManager extends IPSModule
         }
         $chosen = [];
         foreach ($devices[(string)$deviceID]['functions'] as $function=>$variableID) {
-            if (($a['variables'][(string)$variableID] ?? false) !== true) continue;
+            if (array_key_exists((string)$variableID,$a['variables']) && !$a['variables'][(string)$variableID]) continue;
             if (!IPS_ObjectExists($variableID) || IPS_GetObject($variableID)['ObjectType'] !== 2) throw new Exception('Quellvariable ungültig: '.$variableID);
             $chosen[$function] = $variableID;
         }
