@@ -97,7 +97,6 @@ class DeviceManager extends IPSModule
         }
         $importItems = $this->BuildImportControls();
         $deviceItems = $this->BuildDeviceImportControls();
-        $draftList = $this->BuildDeviceDraftList();
         $nativeConfigurator = $this->BuildNativeDeviceConfigurator();
         $deviceSearch = ['type' => 'ValidationTextBox', 'name' => 'DeviceListSearch', 'caption' => 'Geräte filtern (Volltext)', 'value' => $this->ReadAttributeString('DeviceListSearch'), 'onChange' => 'SDM_SetDeviceListSearch($id, $DeviceListSearch);'];
         $selectOptions = static function ($items) {
@@ -142,13 +141,7 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
                 $nativeConfigurator,
-                ['type'=>'ExpansionPanel','caption'=>'Gerät bearbeiten oder mit ausgewählten Variablen anlegen','expanded'=>false,'items'=>[
-                    ['type'=>'Label','caption'=>'Gerät in der Bearbeitungsliste auswählen und über das Zahnrad öffnen. Die native Übersicht dient der Geräteanzeige und Gesehen/Ungesehen-Verwaltung.'],
-                    $draftList
-                ]],
-                ['type'=>'Button','caption'=>'Alles gesehen','onClick'=>'SDM_MarkAllSourceDevicesSeen($id);'],
-                ['type'=>'Button','caption'=>'Gesehene einblenden','onClick'=>'SDM_ShowSeenSourceDevices($id);'],
-                ['type'=>'Label','caption'=>'Neue Geräte grün, angelegte Geräte weiß. Bereits angelegte Geräte über das Zahnrad bearbeiten.']
+
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
