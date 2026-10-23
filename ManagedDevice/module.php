@@ -10,6 +10,9 @@ class ManagedDevice extends IPSModule
         parent::Create();
         $this->RegisterPropertyInteger('SourceInstanceID', 0);
         $this->RegisterPropertyString('DeviceName', '');
+        $this->RegisterPropertyString('Floor', '');
+        $this->RegisterPropertyString('Room', '');
+        $this->RegisterPropertyString('Trade', '');
         $this->RegisterPropertyString('Links', '[]');
     }
 
@@ -78,6 +81,9 @@ class ManagedDevice extends IPSModule
             'elements'=>[
                 ['type'=>'SelectInstance','name'=>'SourceInstanceID','caption'=>'Hardware-Quellinstanz'],
                 ['type'=>'ValidationTextBox','name'=>'DeviceName','caption'=>'Gerätename'],
+                ['type'=>'ValidationTextBox','name'=>'Floor','caption'=>'Etage'],
+                ['type'=>'ValidationTextBox','name'=>'Room','caption'=>'Raum'],
+                ['type'=>'ValidationTextBox','name'=>'Trade','caption'=>'Gewerk'],
                 ['type'=>'Label','caption'=>'Links werden unter dieser Geräteinstanz angelegt. Vorhandene Link-IDs bleiben beim Umbenennen erhalten.'],
                 ['type'=>'List','name'=>'Links','caption'=>'Verknüpfte Variablen','rowCount'=>15,'add'=>false,'delete'=>false,
                     'columns'=>[
