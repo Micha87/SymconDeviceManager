@@ -1315,52 +1315,6 @@ class DeviceManager extends IPSModule
         $this->SaveDeviceDraft($rowsJSON);
     }
 
-    private function BuildNativeDeviceConfigurator()
-    {
-        $devices = $this->DiscoverPilotDevices();
-        $linked = $this->ExistingDeviceVariableIDs();
-        $values = [];
-        $hidden = 0;
-        foreach ($devices as $id => $device) {
-            $functions = array_values($device['functions']);
-            $allLinked = count($functions) > 0;
-            foreach ($functions as $variableID) {
-                if (!isset($linked[$variableID])) { $allLinked = false; break; }
-            }
-            if ($allLinked) { $hidden++; continue; }
-            $a = $this->DeviceAssignment($id, $device);
-            $values[] = [
-                'id' => (int) $id,
-                'name' => $device['name'],
-                'device' => $device['name'],
-                'source' => $device['path'],
-                'floor' => $a['floor'] ?: '—',
-                'room' => $a['room'] ?: '—',
-                'trade' => $a['trade'] ?: 'Unbekannt',
-                'variables' => count($functions),
-                'sourceID' => (int) $id
-            ];
-        }
-        return [
-            'type' => 'Configurator',
-            'name' => 'DeviceNativeConfigurator',
-            'caption' => 'Gefundene Geräte (' . count($values) . ' offen, ' . $hidden . ' bereits verlinkt ausgeblendet)',
-            'rowCount' => 18,
-            'delete' => false,
-            'sort' => ['column' => 'device', 'direction' => 'ascending'],
-            'columns' => [
-                ['caption' => 'Gerät', 'name' => 'device', 'width' => '250px'],
-                ['caption' => 'Etage', 'name' => 'floor', 'width' => '70px'],
-                ['caption' => 'Raum', 'name' => 'room', 'width' => '130px'],
-                ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px'],
-                ['caption' => 'Variablen', 'name' => 'variables', 'width' => '85px'],
-                ['caption' => 'Hardware-Pfad', 'name' => 'source', 'width' => 'auto'],
-                ['caption' => 'Quell-ID', 'name' => 'sourceID', 'width' => '90px']
-            ],
-            'values' => $values
-        ];
-    }
-
     private function ExistingDeviceVariableIDs()
     {
         $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
