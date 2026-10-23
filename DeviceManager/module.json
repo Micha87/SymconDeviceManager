@@ -1,0 +1,11 @@
+{
+  "id": "{2F73117E-0F84-4FA8-A49E-971B3AC04A72}",
+  "name": "Device Manager",
+  "type": 3,
+  "vendor": "SymconDeviceManager",
+  "aliases": ["Symcon Device Manager"],
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "SDM"
+}
