@@ -97,9 +97,8 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Version 0.4: Gebäudeverwaltung und auswählbare Geräteübernahme mit Dummys und Links.'],
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
-                ['type' => 'NumberSpinner', 'name' => 'ManagedBuildingRoot', 'caption' => 'Neue Gebäudestruktur (Ziel-ID)'],
+                ['type' => 'SelectCategory', 'name' => 'ManagedBuildingRoot', 'caption' => 'Zielstruktur für Geräteübernahme (Gebäude_neu)'],
                 ['type' => 'SelectCategory', 'name' => 'DeviceSourceCategory', 'caption' => 'Gerätequelle auswählen (Hardware)'],
-                ['type' => 'SelectCategory', 'name' => 'DeviceTargetCategory', 'caption' => 'Geräteziel auswählen (Gebäudestruktur)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
                 ['type' => 'Select', 'name' => 'FilterFloor', 'value' => $filterFloor, 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $FilterFloor);'],
                 ['type' => 'Select', 'name' => 'FilterRoom', 'value' => $filterRoom, 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $FilterRoom);'],
@@ -135,7 +134,7 @@ class DeviceManager extends IPSModule
                         ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
                     ])]
                 ]],
-                ['type' => 'Label', 'caption' => 'Neue Geräteauswahl: nativer Symcon-Konfigurator. Vorerst reine Vorschau ohne Schreibaktionen.'],
+                ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Vorerst nur Vorschau, keine Erstellung.'],
                 $deviceConfigurator,
                 ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
                     'rowCount' => 12, 'add' => false, 'delete' => false,
