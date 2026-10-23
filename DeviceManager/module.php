@@ -386,7 +386,8 @@ class DeviceManager extends IPSModule
             'trade' => $saved['trade'] ?? $proposal['trade'],
             'variables' => $saved['variables'] ?? [],
             'linkNames' => $saved['linkNames'] ?? [],
-            'deviceName' => $saved['deviceName'] ?? $device['name']
+            'deviceName' => $saved['deviceName'] ?? $device['name'],
+            'dummyID' => (int)($saved['dummyID'] ?? 0)
         ];
     }
 
@@ -571,11 +572,12 @@ class DeviceManager extends IPSModule
         $floor = $this->FindCategoryByName($root,$a['floor']);
         $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
         $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
-        $dummy = $trade ? ($this->FindDeviceDummy($trade,$devices[(string)$deviceID]['name']) ?: $this->FindDeviceDummy($trade,$a['deviceName'])) : 0;
+        $dummy = $this->ManagedDummyID($deviceID,$devices[(string)$deviceID],$a);
         if (!$dummy) throw new Exception('Dummy nicht gefunden.');
         $collision = $this->FindDeviceDummy($trade,$a['deviceName']);
         if ($collision && $collision !== $dummy) throw new Exception('Ein anderes Gerät trägt bereits diesen Namen.');
         IPS_SetName($dummy,$a['deviceName']);
+        $this->StoreManagedDummyID($deviceID,$dummy);
         $this->ReloadForm();
     }
 
@@ -605,6 +607,7 @@ class DeviceManager extends IPSModule
             IPS_SetParent($dummy,$trade);
             IPS_SetName($dummy,$a['deviceName']);
         }
+        $this->StoreManagedDummyID($deviceID,$dummy);
         foreach ($chosen as $function=>$variableID) {
             $link = 0;
             foreach (IPS_GetChildrenIDs($dummy) as $child) {
@@ -680,6 +683,45 @@ class DeviceManager extends IPSModule
         $this->UpdateFormField('ExistingDevices','values',json_encode($list['values'],JSON_UNESCAPED_UNICODE));
     }
 
+    private function ManagedDummyID(int $deviceID, array $device, array $assignment): int
+    {
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        $floor = $this->FindCategoryByName($root,$assignment['floor']);
+        $room = $floor ? $this->FindCategoryByName($floor,$assignment['room']) : 0;
+        $trade = $room ? $this->FindCategoryByName($room,$assignment['trade']) : 0;
+        if (!$trade) return 0;
+        $savedID = (int)($assignment['dummyID'] ?? 0);
+        if ($savedID && IPS_ObjectExists($savedID) && IPS_GetParent($savedID) === $trade && IPS_GetObject($savedID)['ObjectType'] === 1) return $savedID;
+        foreach (array_unique([$assignment['deviceName'],$device['name']]) as $name) {
+            $found = $this->FindDeviceDummy($trade,$name);
+            if ($found) return $found;
+        }
+        // Recover renamed dummies using their actual linked source variables.
+        $matches = [];
+        foreach (IPS_GetChildrenIDs($trade) as $child) {
+            if (IPS_GetObject($child)['ObjectType'] !== 1) continue;
+            $score = 0;
+            foreach (IPS_GetChildrenIDs($child) as $link) {
+                if (IPS_GetObject($link)['ObjectType'] === 6 && in_array(IPS_GetLink($link)['TargetID'],array_values($device['functions']),true)) $score++;
+            }
+            if ($score > 0) $matches[$child] = $score;
+        }
+        if (!$matches) return 0;
+        arsort($matches);
+        $best = reset($matches);
+        if (count(array_filter($matches,static function($v) use ($best) { return $v === $best; })) !== 1) return 0;
+        return (int)array_key_first($matches);
+    }
+
+    private function StoreManagedDummyID(int $deviceID, int $dummyID): void
+    {
+        $all = json_decode($this->ReadAttributeString('DeviceAssignments'),true);
+        if (!is_array($all)) $all = [];
+        if (!isset($all[(string)$deviceID])) $all[(string)$deviceID] = [];
+        $all[(string)$deviceID]['dummyID'] = $dummyID;
+        $this->WriteAttributeString('DeviceAssignments',json_encode($all,JSON_UNESCAPED_UNICODE));
+    }
+
     private function BuildExistingDeviceList(): array
     {
         $devices = $this->DiscoverPilotDevices();
@@ -692,7 +734,7 @@ class DeviceManager extends IPSModule
             $floor = $this->FindCategoryByName($root, $a['floor']);
             $room = $floor ? $this->FindCategoryByName($floor, $a['room']) : 0;
             $trade = $room ? $this->FindCategoryByName($room, $a['trade']) : 0;
-            $dummy = $trade ? $this->FindDeviceDummy($trade, $device['name']) : 0;
+            $dummy = $this->ManagedDummyID((int)$id,$device,$a);
             if (!$dummy) continue;
             if (isset($seenDummies[$dummy])) continue;
             // A dummy is one managed device, even if multiple source instances share its name.
@@ -721,7 +763,7 @@ class DeviceManager extends IPSModule
             $aliasTrade = ['Beleuchtung'=>'Bel.', 'Heizung'=>'Hzg.', 'Rollladen'=>'Rol.', 'Multimedia'=>'Med.', 'Steckdosen'=>'Steck.', 'Sensoren'=>'Sens.', 'Sonstige'=>'Sonst.'];
             $aliasRoom = ['Wohnzimmer'=>'Wohn.', 'Schlafzimmer'=>'Schlaf.', 'Wintergarten'=>'Winterg.', 'Küche'=>'Kü.', 'Badezimmer'=>'Bad.', 'Kinderzimmer'=>'Kind.'];
             $alias = ($aliasTrade[$a['trade']] ?? $a['trade']).'/'.$a['floor'].'/'.($aliasRoom[$a['room']] ?? $a['room']).'/';
-            $rows[] = ['deviceID'=>(int)$id, 'alias'=>$alias, 'name'=>$device['name'], 'floor'=>$a['floor'], 'room'=>$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
+            $rows[] = ['deviceID'=>(int)$id, 'alias'=>$alias, 'name'=>IPS_GetName($dummy), 'floor'=>$a['floor'], 'room'=>$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
         }
         return ['type'=>'List','name'=>'ExistingDevices','caption'=>'Bereits angelegte Geräte – Variablenbestand','rowCount'=>10,'add'=>false,'delete'=>false,'width'=>'100%',
             'form'=>'return SDM_GetExistingDeviceDialogForm($id, (int)($ExistingDevices["deviceID"] ?? 0));',
@@ -746,7 +788,7 @@ class DeviceManager extends IPSModule
         $floor = $this->FindCategoryByName($root,$a['floor']);
         $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
         $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
-        $dummy = $trade ? $this->FindDeviceDummy($trade,$a['deviceName']) ?: $this->FindDeviceDummy($trade,$device['name']) : 0;
+        $dummy = $this->ManagedDummyID($deviceID,$device,$a);
         if (!$dummy) return [['type'=>'Label','caption'=>'Dummy nicht mehr vorhanden']];
         $linked = [];
         foreach (IPS_GetChildrenIDs($dummy) as $child) {
@@ -814,7 +856,7 @@ class DeviceManager extends IPSModule
         $floor = $this->FindCategoryByName($root,$a['floor']);
         $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
         $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
-        $dummy = $trade ? $this->FindDeviceDummy($trade,$devices[(string)$deviceID]['name']) : 0;
+        $dummy = $this->ManagedDummyID($deviceID,$devices[(string)$deviceID],$a);
         if (!$dummy) throw new Exception('Dummy fehlt.');
         $targets = [];
         foreach (IPS_GetChildrenIDs($dummy) as $child) {
@@ -934,6 +976,7 @@ class DeviceManager extends IPSModule
         $collision = $this->FindDeviceDummy($trade,$device['name']);
         if ($collision && $collision !== $dummy) throw new Exception('Im Ziel existiert bereits ein gleichnamiger Dummy.');
         IPS_SetParent($dummy,$trade);
+        $this->StoreManagedDummyID($deviceID,$dummy);
         $all = json_decode($this->ReadAttributeString('DeviceAssignments'),true);
         if (!is_array($all)) $all = [];
         $all[(string)$deviceID] = $a;
