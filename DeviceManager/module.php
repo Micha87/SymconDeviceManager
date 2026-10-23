@@ -385,7 +385,8 @@ class DeviceManager extends IPSModule
             'room' => $saved['room'] ?? $proposal['room'],
             'trade' => $saved['trade'] ?? $proposal['trade'],
             'variables' => $saved['variables'] ?? [],
-            'linkNames' => $saved['linkNames'] ?? []
+            'linkNames' => $saved['linkNames'] ?? [],
+            'deviceName' => $saved['deviceName'] ?? $device['name']
         ];
     }
 
@@ -494,6 +495,8 @@ class DeviceManager extends IPSModule
         return [
             ['type'=>'Select','name'=>'deviceID','caption'=>'Gerät','options'=>$options,'value'=>$deviceID,
                 'onChange'=>'SDM_UpdateDeviceDialog($id, $deviceID);'],
+            ['type'=>'ValidationTextBox','name'=>'deviceName','caption'=>'Gerätename (Ziel-Dummy)','value'=>$a['deviceName'] ?? '',
+                'onChange'=>'SDM_SetManagedDeviceName($id, '.$deviceID.', $deviceName);'],
             ['type'=>'Select','name'=>'floor','caption'=>'Etage','options'=>$floors,'value'=>$a['floor']],
             ['type'=>'Select','name'=>'room','caption'=>'Raum','options'=>$rooms,'value'=>$a['room']],
             ['type'=>'Select','name'=>'trade','caption'=>'Gewerk','options'=>$trades,'value'=>$a['trade']],
@@ -507,7 +510,7 @@ class DeviceManager extends IPSModule
                 ],
                 'values'=>$this->DeviceDialogVariables($deviceID)],
             ['type'=>'Label','caption'=>'Variablen ausschließlich oben in der Tabelle auswählen. Die Auswahl wird beim Bearbeiten übernommen.'],
-            ['type'=>'Button','caption'=>'Gerät mit ausgewählten Variablen in Gebäude_neu anlegen','onClick'=>'SDM_CreateConfiguredDevice($id, '.$deviceID.');']
+            ['type'=>'Button','caption'=>'Gerät mit ausgewählten Variablen in Gebäude_neu anlegen','onClick'=>'SDM_CreateDeviceFromDialog($id, '.$deviceID.', json_encode($selectedVariables));']
         ];
     }
 
@@ -540,6 +543,42 @@ class DeviceManager extends IPSModule
         $this->WriteAttributeString('DeviceAssignments',json_encode($all,JSON_UNESCAPED_UNICODE));
     }
 
+    public function SetManagedDeviceName(int $deviceID, string $name)
+    {
+        $name = trim($name);
+        if ($name === '' || mb_strlen($name,'UTF-8') > 100 || strpos($name,'/') !== false) throw new Exception('Ungültiger Gerätename.');
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) throw new Exception('Quellgerät fehlt.');
+        $all = json_decode($this->ReadAttributeString('DeviceAssignments'),true);
+        if (!is_array($all)) $all = [];
+        if (!isset($all[(string)$deviceID])) $all[(string)$deviceID] = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
+        $all[(string)$deviceID]['deviceName'] = $name;
+        $this->WriteAttributeString('DeviceAssignments',json_encode($all,JSON_UNESCAPED_UNICODE));
+    }
+
+    public function CreateDeviceFromDialog(int $deviceID, string $rowsJSON)
+    {
+        $this->SaveDialogVariableSelection($deviceID,$rowsJSON);
+        $this->CreateConfiguredDevice($deviceID);
+    }
+
+    public function ApplyManagedDeviceName(int $deviceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) throw new Exception('Quellgerät fehlt.');
+        $a = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        $floor = $this->FindCategoryByName($root,$a['floor']);
+        $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
+        $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
+        $dummy = $trade ? ($this->FindDeviceDummy($trade,$devices[(string)$deviceID]['name']) ?: $this->FindDeviceDummy($trade,$a['deviceName'])) : 0;
+        if (!$dummy) throw new Exception('Dummy nicht gefunden.');
+        $collision = $this->FindDeviceDummy($trade,$a['deviceName']);
+        if ($collision && $collision !== $dummy) throw new Exception('Ein anderes Gerät trägt bereits diesen Namen.');
+        IPS_SetName($dummy,$a['deviceName']);
+        $this->ReloadForm();
+    }
+
     public function CreateConfiguredDevice(int $deviceID)
     {
         $devices = $this->DiscoverPilotDevices();
@@ -560,11 +599,11 @@ class DeviceManager extends IPSModule
         $floor = $this->FindOrCreateCategory($root,$a['floor']);
         $room = $this->FindOrCreateCategory($floor,$a['room']);
         $trade = $this->FindOrCreateCategory($room,$a['trade']);
-        $dummy = $this->FindDeviceDummy($trade,$devices[(string)$deviceID]['name']);
+        $dummy = $this->FindDeviceDummy($trade,$a['deviceName']) ?: $this->FindDeviceDummy($trade,$devices[(string)$deviceID]['name']);
         if (!$dummy) {
             $dummy = IPS_CreateInstance('{485D0419-BE97-4548-AA9C-C083EB82E61E}');
             IPS_SetParent($dummy,$trade);
-            IPS_SetName($dummy,$devices[(string)$deviceID]['name']);
+            IPS_SetName($dummy,$a['deviceName']);
         }
         foreach ($chosen as $function=>$variableID) {
             $link = 0;
@@ -707,7 +746,7 @@ class DeviceManager extends IPSModule
         $floor = $this->FindCategoryByName($root,$a['floor']);
         $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
         $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
-        $dummy = $trade ? $this->FindDeviceDummy($trade,$device['name']) : 0;
+        $dummy = $trade ? $this->FindDeviceDummy($trade,$a['deviceName']) ?: $this->FindDeviceDummy($trade,$device['name']) : 0;
         if (!$dummy) return [['type'=>'Label','caption'=>'Dummy nicht mehr vorhanden']];
         $linked = [];
         foreach (IPS_GetChildrenIDs($dummy) as $child) {
@@ -721,9 +760,11 @@ class DeviceManager extends IPSModule
         }
         $drafts = json_decode($this->ReadAttributeString('ManagedEditDraft'),true);
         $draft = is_array($drafts) ? ($drafts[(string)$deviceID] ?? []) : [];
-        $form = array_slice($this->GetDeviceDialogForm($deviceID),0,5);
+        $form = array_slice($this->GetDeviceDialogForm($deviceID),0,6);
         $form[0] = ['type'=>'Label','caption'=>'Gerät: '.$device['name'].' ('.$deviceID.') | Dummy: '.$dummy];
-        foreach (['floor'=>1,'room'=>2,'trade'=>3] as $field=>$index) {
+        $form[1]['value'] = $a['deviceName'];
+        $form[1]['onChange'] = 'SDM_SetManagedDeviceName($id, '.$deviceID.', $deviceName);';
+        foreach (['floor'=>2,'room'=>3,'trade'=>4] as $field=>$index) {
             $form[$index]['value'] = $draft[$field] ?? $a[$field];
             $form[$index]['onChange'] = 'SDM_SetManagedEditField($id, '.$deviceID.', "'.$field.'", $'.$field.');';
         }
@@ -737,9 +778,9 @@ class DeviceManager extends IPSModule
             $row['targetLinkID'] = isset($linked[(int)$row['variableID']]) ? (int)$linked[(int)$row['variableID']] : 0;
         }
         unset($row);
-        $form[4]['values'] = $rows;
-        $form[4]['onEdit'] = 'SDM_SaveExistingLinkNames($id, '.$deviceID.', json_encode($selectedVariables));';
-        $form[4]['columns'] = [
+        $form[5]['values'] = $rows;
+        $form[5]['onEdit'] = 'SDM_SaveExistingLinkNames($id, '.$deviceID.', json_encode($selectedVariables));';
+        $form[5]['columns'] = [
             ['caption'=>'Verlinken','name'=>'enabled','width'=>'75px','edit'=>['type'=>'CheckBox']],
             ['caption'=>'Linkname','name'=>'name','width'=>'30%','edit'=>['type'=>'ValidationTextBox'],'save'=>true],
             ['caption'=>'Quellvariable','name'=>'sourceVariableID','width'=>'22%','edit'=>['type'=>'SelectVariable'],'save'=>true],
@@ -748,7 +789,9 @@ class DeviceManager extends IPSModule
         array_splice($form,1,0,[
             ['type'=>'Label','caption'=>'Quelle: '.$device['path'].' / '.$device['name']],
             ['type'=>'Label','caption'=>'Ziel: '.implode(' / ',array_filter([$a['floor'],$a['room'],$a['trade'],$device['name']]))],
-            ['type'=>'Label','caption'=>'Raum/Gewerk ändern: Auswahl speichern und dann mit dem Button verschieben. Dummy- und Link-IDs bleiben erhalten.'],
+            ['type'=>'Label','caption'=>'Gerätenamen und Linknamen nach der Bearbeitung über die Buttons übernehmen. Dummy- und Link-IDs bleiben erhalten.'],
+            ['type'=>'Button','caption'=>'Gerätenamen am bestehenden Dummy übernehmen','onClick'=>'SDM_ApplyManagedDeviceName($id, '.$deviceID.');'],
+            ['type'=>'Button','caption'=>'Variablen und Linknamen übernehmen','onClick'=>'SDM_SaveExistingLinkNames($id, '.$deviceID.', json_encode($selectedVariables));'],
             ['type'=>'Button','caption'=>'Gerät in gewählten Raum / Gewerk verschieben','onClick'=>'SDM_MoveManagedDevice($id, '.$deviceID.');']
         ]);
         $swapDrafts = json_decode($this->ReadAttributeString('HardwareSwapDraft'),true);
@@ -804,7 +847,8 @@ class DeviceManager extends IPSModule
             $name = trim((string)($row['name'] ?? ''));
             if ($name === '' || !in_array($varID,array_values($devices[(string)$deviceID]['functions']),true)) continue;
             $this->SetDeviceLinkName($deviceID,$varID,$name);
-            if (isset($targets[$varID]) && IPS_GetName($targets[$varID]) !== $name) IPS_SetName($targets[$varID],$name);
+            $linkID = (int)($row['targetLinkID'] ?? ($targets[$varID] ?? 0));
+            if ($linkID && IPS_ObjectExists($linkID) && IPS_GetObject($linkID)['ObjectType'] === 6 && IPS_GetParent($linkID) === $dummy && IPS_GetName($linkID) !== $name) IPS_SetName($linkID,$name);
         }
     }
 
