@@ -502,8 +502,67 @@ class DeviceManager extends IPSModule
                     ['caption'=>'Variable','name'=>'name','width'=>'auto','save'=>true],
                     ['caption'=>'ID','name'=>'variableID','width'=>'90px','save'=>true]
                 ],
-                'values'=>$this->DeviceDialogVariables($deviceID)]
+                'values'=>$this->DeviceDialogVariables($deviceID)],
+            ['type'=>'Label','caption'=>'Vor dem Anlegen die Gerätezuordnung mit Änderungen übernehmen speichern. Die unten stehenden Checkboxen speichern die Variablenauswahl direkt.'],
+            ...$this->BuildCreationVariableControls($deviceID),
+            ['type'=>'Button','caption'=>'Gerät mit ausgewählten Variablen in Gebäude_neu anlegen','onClick'=>'SDM_CreateConfiguredDevice($id, '.$deviceID.');']
         ];
+    }
+
+    private function BuildCreationVariableControls(int $deviceID): array
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!$deviceID || !isset($devices[(string)$deviceID])) return [];
+        $a = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
+        $items = [];
+        foreach ($devices[(string)$deviceID]['functions'] as $function=>$variableID) {
+            $checked = array_key_exists((string)$variableID,$a['variables']) ? (bool)$a['variables'][(string)$variableID] : false;
+            $items[] = ['type'=>'CheckBox','name'=>'CreateVar_'.$variableID,'caption'=>$function.' ('.$variableID.')',
+                'value'=>$checked,'onChange'=>'SDM_SetDeviceVariable($id, '.$deviceID.', '.$variableID.', $CreateVar_'.$variableID.');'];
+        }
+        return $items;
+    }
+
+    public function CreateConfiguredDevice(int $deviceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) throw new Exception('Quellgerät nicht gefunden.');
+        $a = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        if (!$root || !IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) throw new Exception('Zielwurzel ungültig.');
+        foreach (['floor','room','trade'] as $field) {
+            if (!is_string($a[$field]) || trim($a[$field]) === '' || $a[$field] === 'Unbekannt' || strpos($a[$field],'/') !== false) throw new Exception('Bitte Etage, Raum und Gewerk zuerst speichern.');
+        }
+        $chosen = [];
+        foreach ($devices[(string)$deviceID]['functions'] as $function=>$variableID) {
+            if (($a['variables'][(string)$variableID] ?? false) !== true) continue;
+            if (!IPS_ObjectExists($variableID) || IPS_GetObject($variableID)['ObjectType'] !== 2) throw new Exception('Quellvariable ungültig: '.$variableID);
+            $chosen[$function] = $variableID;
+        }
+        if (!$chosen) throw new Exception('Bitte mindestens eine Variable ausdrücklich auswählen.');
+        $floor = $this->FindOrCreateCategory($root,$a['floor']);
+        $room = $this->FindOrCreateCategory($floor,$a['room']);
+        $trade = $this->FindOrCreateCategory($room,$a['trade']);
+        $dummy = $this->FindDeviceDummy($trade,$devices[(string)$deviceID]['name']);
+        if (!$dummy) {
+            $dummy = IPS_CreateInstance('{485D0419-BE97-4548-AA9C-C083EB82E61E}');
+            IPS_SetParent($dummy,$trade);
+            IPS_SetName($dummy,$devices[(string)$deviceID]['name']);
+        }
+        foreach ($chosen as $function=>$variableID) {
+            $link = 0;
+            foreach (IPS_GetChildrenIDs($dummy) as $child) {
+                if (IPS_GetObject($child)['ObjectType'] !== 6) continue;
+                if (IPS_GetLink($child)['TargetID'] === $variableID || IPS_GetName($child) === $function) { $link = $child; break; }
+            }
+            if (!$link) {
+                $link = IPS_CreateLink();
+                IPS_SetParent($link,$dummy);
+                IPS_SetName($link,$function);
+            }
+            IPS_SetLinkTargetID($link,$variableID);
+        }
+        $this->ReloadForm();
     }
 
     private function DeviceDialogVariables(int $deviceID): array
