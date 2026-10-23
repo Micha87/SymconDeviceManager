@@ -9,12 +9,15 @@ class ManagedDevice extends IPSModule
     {
         parent::Create();
         $this->RegisterPropertyInteger('SourceInstanceID', 0);
+        $this->RegisterPropertyString('DeviceName', '');
         $this->RegisterPropertyString('Links', '[]');
     }
 
     public function ApplyChanges()
     {
         parent::ApplyChanges();
+        $name = trim($this->ReadPropertyString('DeviceName'));
+        if ($name !== '' && IPS_GetName($this->InstanceID) !== $name) IPS_SetName($this->InstanceID,$name);
         $this->SynchronizeLinks();
     }
 
@@ -36,6 +39,17 @@ class ManagedDevice extends IPSModule
         return $found;
     }
 
+    private function SuggestedLinkName(int $variableID, string $sourceName): string
+    {
+        if ($sourceName !== 'Wert') return $sourceName;
+        $parent = IPS_GetParent($variableID);
+        if ($parent > 0 && IPS_ObjectExists($parent)) {
+            $parentName = trim(IPS_GetName($parent));
+            if ($parentName !== '') return $parentName;
+        }
+        return $sourceName . ' ' . $variableID;
+    }
+
     public function GetConfigurationForm()
     {
         $vars = $this->SourceVariables();
@@ -51,13 +65,14 @@ class ManagedDevice extends IPSModule
             $rows[] = [
                 'sourceID'=>$id,
                 'enabled'=>isset($selected[$id]) ? (bool)($selected[$id]['enabled'] ?? true) : true,
-                'linkName'=>(string)($selected[$id]['linkName'] ?? $name),
+                'linkName'=>(string)($selected[$id]['linkName'] ?? $this->SuggestedLinkName((int)$id,$name)),
                 'sourceName'=>$name
             ];
         }
         return json_encode([
             'elements'=>[
                 ['type'=>'SelectInstance','name'=>'SourceInstanceID','caption'=>'Hardware-Quellinstanz'],
+                ['type'=>'ValidationTextBox','name'=>'DeviceName','caption'=>'Gerätename'],
                 ['type'=>'Label','caption'=>'Links werden unter dieser Geräteinstanz angelegt. Vorhandene Link-IDs bleiben beim Umbenennen erhalten.'],
                 ['type'=>'List','name'=>'Links','caption'=>'Verknüpfte Variablen','rowCount'=>15,'add'=>false,'delete'=>false,
                     'columns'=>[
@@ -92,7 +107,7 @@ class ManagedDevice extends IPSModule
             $enabled = (bool)($row['enabled'] ?? true);
             if (!$enabled) continue; // Disabling never destroys existing links automatically.
             $name = trim((string)($row['linkName'] ?? ''));
-            if ($name === '') $name = $sourceVars[$sourceID];
+            if ($name === '') $name = $this->SuggestedLinkName($sourceID,$sourceVars[$sourceID]);
             $link = (int)($existing[$sourceID][0] ?? 0);
             if (!$link) {
                 $link = IPS_CreateLink();
