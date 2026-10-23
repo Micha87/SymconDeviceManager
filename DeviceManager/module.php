@@ -616,6 +616,7 @@ class DeviceManager extends IPSModule
         $rows = [];
         $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
         $search = trim($this->ReadAttributeString('ExistingDeviceSearch'));
+        $seenDummies = [];
         foreach ($devices as $id => $device) {
             $a = $this->DeviceAssignment($id, $device);
             $floor = $this->FindCategoryByName($root, $a['floor']);
@@ -623,6 +624,24 @@ class DeviceManager extends IPSModule
             $trade = $room ? $this->FindCategoryByName($room, $a['trade']) : 0;
             $dummy = $trade ? $this->FindDeviceDummy($trade, $device['name']) : 0;
             if (!$dummy) continue;
+            if (isset($seenDummies[$dummy])) continue;
+            // A dummy is one managed device, even if multiple source instances share its name.
+            // Prefer the source whose variables are actually targeted by the dummy links.
+            $linkedTargets = [];
+            foreach (IPS_GetChildrenIDs($dummy) as $child) {
+                if (IPS_GetObject($child)['ObjectType'] === 6) $linkedTargets[] = IPS_GetLink($child)['TargetID'];
+            }
+            $matches = count(array_intersect($linkedTargets, array_values($device['functions'])));
+            $bestMatches = $matches;
+            foreach ($devices as $otherID => $otherDevice) {
+                if ((string)$otherID === (string)$id || $otherDevice['name'] !== $device['name']) continue;
+                $otherAssignment = $this->DeviceAssignment($otherID,$otherDevice);
+                if ($otherAssignment['floor'] !== $a['floor'] || $otherAssignment['room'] !== $a['room'] || $otherAssignment['trade'] !== $a['trade']) continue;
+                $otherMatches = count(array_intersect($linkedTargets,array_values($otherDevice['functions'])));
+                if ($otherMatches > $bestMatches) $bestMatches = $otherMatches;
+            }
+            if ($matches < $bestMatches) continue;
+            $seenDummies[$dummy] = true;
             $haystack = $device['name'].' '.$device['path'].' '.$id.' '.$a['floor'].' '.$a['room'].' '.$a['trade'].' '.$dummy;
             if ($search !== '' && mb_stripos($haystack,$search,0,'UTF-8') === false) continue;
             $links = 0;
