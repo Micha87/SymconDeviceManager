@@ -592,6 +592,40 @@ class DeviceManager extends IPSModule
         return ['type'=>'ExpansionPanel','caption'=>'Variablen bestehender Geräte hinzufügen / entfernen','items'=>$items];
     }
 
+    public function SyncManagedDeviceLinks(int $deviceID)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) throw new Exception('Quellgerät fehlt.');
+        $device = $devices[(string)$deviceID];
+        $a = $this->DeviceAssignment($deviceID,$device);
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        $floor = $this->FindCategoryByName($root,$a['floor']);
+        $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
+        $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
+        $dummy = $trade ? $this->FindDeviceDummy($trade,$device['name']) : 0;
+        if (!$dummy) throw new Exception('Dummy in der Zielstruktur nicht gefunden. Es wird kein Gerät automatisch angelegt.');
+        $allowed = array_values($device['functions']);
+        $links = [];
+        foreach (IPS_GetChildrenIDs($dummy) as $child) {
+            if (IPS_GetObject($child)['ObjectType'] !== 6) continue;
+            $target = IPS_GetLink($child)['TargetID'];
+            if (in_array($target,$allowed,true)) $links[$target] = $child;
+        }
+        foreach ($device['functions'] as $function=>$variableID) {
+            $enabled = array_key_exists((string)$variableID,$a['variables']) ? (bool)$a['variables'][(string)$variableID] : isset($links[$variableID]);
+            if ($enabled && !isset($links[$variableID])) {
+                if (!IPS_ObjectExists($variableID) || IPS_GetObject($variableID)['ObjectType'] !== 2) continue;
+                $link = IPS_CreateLink();
+                IPS_SetParent($link,$dummy);
+                IPS_SetName($link,$function);
+                IPS_SetLinkTargetID($link,$variableID);
+            } elseif (!$enabled && isset($links[$variableID])) {
+                IPS_DeleteLink($links[$variableID]);
+            }
+        }
+        $this->ReloadForm();
+    }
+
     public function SelectLinkDevice(int $deviceID)
     {
         $this->WriteAttributeInteger('ManageDeviceID',$deviceID);
