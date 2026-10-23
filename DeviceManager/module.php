@@ -36,6 +36,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('DeviceAssignments', '{}');
         $this->RegisterAttributeInteger('EditingDevice', 0);
         $this->RegisterAttributeString('DeviceSearch', '');
+        $this->RegisterAttributeBoolean('ShowExistingDevices', false);
     }
 
     public function ApplyChanges()
@@ -411,6 +412,34 @@ class DeviceManager extends IPSModule
         ];
     }
 
+    private function ExistingDeviceVariableIDs()
+    {
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        $targets = [];
+        if ($root <= 0 || !IPS_ObjectExists($root)) return $targets;
+        $stack = [[$root, 0]];
+        while ($stack) {
+            [$parent, $depth] = array_pop($stack);
+            if ($depth > 12) continue;
+            foreach (IPS_GetChildrenIDs($parent) as $child) {
+                $obj = IPS_GetObject($child);
+                if ($obj['ObjectType'] === 6) {
+                    $target = IPS_GetLink($child)['TargetID'];
+                    if ($target > 0) $targets[$target] = true;
+                } elseif ($obj['ObjectType'] === 0 || $obj['ObjectType'] === 1) {
+                    $stack[] = [$child, $depth + 1];
+                }
+            }
+        }
+        return $targets;
+    }
+
+    public function SetShowExistingDevices(bool $enabled)
+    {
+        $this->WriteAttributeBoolean('ShowExistingDevices', $enabled);
+        $this->UpdateFormField('ShowExistingDevices', 'value', $enabled);
+    }
+
     private function BuildDeviceImportControls()
     {
         $devices = $this->DiscoverPilotDevices();
@@ -421,20 +450,41 @@ class DeviceManager extends IPSModule
         $sourceName = ($sourceID > 0 && IPS_ObjectExists($sourceID)) ? IPS_GetLocation($sourceID) : 'nicht gefunden';
         $controls[] = ['type' => 'Label', 'caption' => 'Quelle: ' . $sourceName . ' | Zielwurzel: ' . IPS_GetLocation($this->ReadPropertyInteger('ManagedBuildingRoot'))];
         $controls[] = ['type' => 'Label', 'caption' => count($devices) . ' Geräte erkannt. Markiere Geräte und bearbeite ihre Zuordnung einzeln. Skript-Unterkategorien werden ignoriert.'];
+        $linkedTargets = $this->ExistingDeviceVariableIDs();
+        $showExisting = $this->ReadAttributeBoolean('ShowExistingDevices');
+        $controls[] = ['type' => 'CheckBox', 'name' => 'ShowExistingDevices', 'caption' => 'Bereits verlinkte Geräte anzeigen', 'value' => $showExisting,
+            'onChange' => 'SDM_SetShowExistingDevices($id, $ShowExistingDevices);'];
         $editing = $this->ReadAttributeInteger('EditingDevice');
         $search = trim($this->ReadAttributeString('DeviceSearch'));
         $controls[] = ['type' => 'ValidationTextBox', 'name' => 'DeviceSearch', 'caption' => 'Volltextfilter (Gerät, Pfad, Raum, Gewerk)',
             'value' => $search, 'onChange' => 'SDM_SetDeviceSearch($id, $DeviceSearch);'];
         $controls[] = ['type' => 'Label', 'caption' => 'Suche filtert die Auswahlliste direkt, ohne den Bereich zu schließen.'];
         $deviceOptions = [['caption' => 'Gerät auswählen …', 'value' => 0]];
+        $tableRows = [];
+        $hiddenExisting = 0;
         foreach ($devices as $id => $device) {
             $assignment = $this->DeviceAssignment($id, $device);
+            $allLinked = count($device['functions']) > 0;
+            foreach ($device['functions'] as $variableID) {
+                if (!isset($linkedTargets[$variableID])) { $allLinked = false; break; }
+            }
+            if ($allLinked && !$showExisting && (int) $id !== $editing) { $hiddenExisting++; continue; }
             $label = $device['name'] . ' | ' . ($assignment['floor'] ?: '?') . '/' . ($assignment['room'] ?: '?') . '/' . ($assignment['trade'] ?: '?');
             $haystack = $label . ' ' . $device['path'] . ' ' . $id;
             if ($search !== '' && mb_stripos($haystack, $search, 0, 'UTF-8') === false && (int) $id !== $editing) continue;
             $deviceOptions[] = ['caption' => $label . ' (' . $id . ')', 'value' => (int) $id];
+            $tableRows[] = ['device' => $device['name'], 'floor' => $assignment['floor'] ?: '—', 'room' => $assignment['room'] ?: '—', 'trade' => $assignment['trade'], 'count' => count($device['functions']), 'state' => $allLinked ? 'Verlinkt' : 'Offen'];
         }
 
+        $controls[] = ['type' => 'Label', 'caption' => count($tableRows) . ' Geräte sichtbar, ' . $hiddenExisting . ' vollständig verlinkte Geräte ausgeblendet.'];
+        $controls[] = ['type' => 'List', 'name' => 'DeviceOverview', 'caption' => 'Gefundene Geräte', 'rowCount' => 12, 'add' => false, 'delete' => false, 'columns' => [
+            ['caption' => 'Gerät', 'name' => 'device', 'width' => '260px'],
+            ['caption' => 'Etage', 'name' => 'floor', 'width' => '75px'],
+            ['caption' => 'Raum', 'name' => 'room', 'width' => '140px'],
+            ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px'],
+            ['caption' => 'Variablen', 'name' => 'count', 'width' => '90px'],
+            ['caption' => 'Status', 'name' => 'state', 'width' => '90px']
+        ], 'values' => $tableRows];
         $controls[] = ['type' => 'Select', 'name' => 'EditingDevice', 'caption' => 'Gerät auswählen (Dropdown)',
             'value' => isset($devices[(string) $editing]) ? $editing : 0, 'options' => $deviceOptions,
             'onChange' => 'SDM_SetEditingDevice($id, $EditingDevice);'];
