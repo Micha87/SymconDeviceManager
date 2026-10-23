@@ -33,6 +33,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeString('ImportSelections', '{}');
         $this->RegisterAttributeBoolean('ShowImportedRooms', false);
         $this->RegisterAttributeString('DeviceSelections', '{}');
+        $this->RegisterAttributeString('DeviceAssignments', '{}');
     }
 
     public function ApplyChanges()
@@ -273,13 +274,26 @@ class DeviceManager extends IPSModule
     private function DiscoverPilotDevices()
     {
         $root = $this->ReadPropertyInteger('DeviceSourceCategory');
-        if (!IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) return [];
+        if ($root <= 0 || !IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) return [];
         $devices = [];
-        foreach (IPS_GetChildrenIDs($root) as $id) {
+        $this->WalkDeviceCategories($root, $root, $devices, 0);
+        return $devices;
+    }
+
+    private function WalkDeviceCategories($category, $root, &$devices, $depth)
+    {
+        if ($depth > 12 || count($devices) >= 500) return;
+        foreach (IPS_GetChildrenIDs($category) as $id) {
             $obj = IPS_GetObject($id);
-            if ($obj['ObjectType'] !== 1) continue; // Kategorien wie Scripte_Funktionen ignorieren
+            if ($obj['ObjectType'] === 0) {
+                if (preg_match('/^(Scripte?_Funktionen|Skripte?|Scripts?|Funktionen)$/iu', $obj['ObjectName'])) continue;
+                $this->WalkDeviceCategories($id, $root, $devices, $depth + 1);
+                continue;
+            }
+            if ($obj['ObjectType'] !== 1) continue;
             $isDummy = (IPS_GetInstance($id)['ModuleInfo']['ModuleID'] ?? '') === '{485D0419-BE97-4548-AA9C-C083EB82E61E}';
-            $name = $isDummy ? $obj['ObjectName'] : preg_replace('/_(s|d|w)$/iu', '', $obj['ObjectName']);
+            $rawName = $obj['ObjectName'];
+            $name = $isDummy ? $rawName : preg_replace('/_(s|d|w)$/iu', '', $rawName);
             if (!$isDummy) $name = preg_replace('/^Bel\\.[^.]+\\./iu', '', $name);
             $members = $isDummy ? IPS_GetChildrenIDs($id) : [$id];
             $functions = [];
@@ -298,9 +312,47 @@ class DeviceManager extends IPSModule
                 }
             }
             if (!$functions) continue;
-            $devices[(string) $id] = ['name' => $name, 'functions' => $functions];
+            $devices[(string) $id] = [
+                'name' => $name, 'functions' => $functions,
+                'path' => IPS_GetLocation($id),
+                'category' => $category,
+                'proposal' => $this->SuggestDevicePlacement($name, $category, $root)
+            ];
         }
-        return $devices;
+    }
+
+    private function SuggestDevicePlacement($name, $category, $root)
+    {
+        $rootName = IPS_GetName($root);
+        $segments = [];
+        $cursor = $category;
+        while ($cursor > 0 && $cursor !== $root && count($segments) < 15) {
+            array_unshift($segments, IPS_GetName($cursor));
+            $cursor = IPS_GetParent($cursor);
+        }
+        $rooms = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
+        $room = '';
+        $floor = '';
+        foreach ($rooms as $floorName => $roomNames) {
+            foreach ($roomNames as $roomName) {
+                $haystack = mb_strtolower(implode(' ', $segments) . ' ' . $name, 'UTF-8');
+                if (mb_strpos($haystack, mb_strtolower($roomName, 'UTF-8')) !== false) {
+                    $room = $roomName;
+                    $floor = $floorName;
+                    break 2;
+                }
+            }
+        }
+        if ($room === '' && preg_match('/^([^_]+)_([^_]+)/u', $name, $m)) {
+            $room = $m[1];
+        }
+        $trade = 'Unbekannt';
+        $haystack = mb_strtolower(implode(' ', $segments) . ' ' . $name, 'UTF-8');
+        if (preg_match('/beleuchtung|licht|lampe|strahler|kugel|led|dimm/u', $haystack)) $trade = 'Beleuchtung';
+        elseif (preg_match('/heizung|thermostat|temperatur|hzg/u', $haystack)) $trade = 'Heizung';
+        elseif (preg_match('/rollladen|rolladen|jalous|shutter/u', $haystack)) $trade = 'Rollladen';
+        elseif (preg_match('/musik|audio|tv|media|multimedia/u', $haystack)) $trade = 'Multimedia';
+        return ['floor' => $floor, 'room' => $room, 'trade' => $trade, 'source' => $rootName];
     }
 
     private function GetPilotTarget()
@@ -340,14 +392,15 @@ class DeviceManager extends IPSModule
         $sourceName = ($sourceID > 0 && IPS_ObjectExists($sourceID)) ? IPS_GetLocation($sourceID) : 'nicht gefunden';
         $targetName = $target ? IPS_GetLocation($target) : 'nicht gefunden / außerhalb Gebäude_neu';
         $controls[] = ['type' => 'Label', 'caption' => 'Aktuelle Quelle: ' . $sourceName . ' (ID ' . $sourceID . ') | Ziel: ' . $targetName];
-        $controls[] = ['type' => 'Label', 'caption' => count($devices) . ' Geräte erkannt. Die Geräteübernahme verwendet keine Filter der allgemeinen Geräteübersicht. Es werden nur direkte Instanzen und Dummy-Gruppen in dieser Kategorie erkannt.'];
+        $controls[] = ['type' => 'Label', 'caption' => count($devices) . ' Geräte rekursiv erkannt (max. 500). Allgemeine Scan-Filter werden nicht angewendet. Skript-Unterkategorien werden ignoriert.'];
         if (!$target) $controls[] = ['type' => 'Label', 'caption' => 'Zielkategorie fehlt oder liegt nicht unter der verwalteten Gebäudestruktur.'];
         foreach ($devices as $id => $device) {
             $dummy = $target ? $this->FindDeviceDummy($target, $device['name']) : 0;
             $functions = implode(', ', array_map(static function ($name, $variable) {
                 return $name . ' → ' . $variable;
             }, array_keys($device['functions']), array_values($device['functions'])));
-            $caption = $device['name'] . ' [' . $functions . ']';
+            $proposal = $device['proposal'];
+            $caption = $device['name'] . ' [' . $functions . '] — ' . $device['path'] . ' | Vorschlag: ' . ($proposal['floor'] ?: '?') . '/' . ($proposal['room'] ?: '?') . '/' . $proposal['trade'];
             if ($dummy) {
                 $controls[] = ['type' => 'Label', 'caption' => '✓ ' . $caption . ' (Dummy vorhanden: ' . $dummy . ')'];
             } else {
@@ -358,7 +411,7 @@ class DeviceManager extends IPSModule
                 ];
             }
         }
-        if (!$devices) $controls[] = ['type' => 'Label', 'caption' => 'Keine direkten KNX-Geräte in der gewählten Quellkategorie erkannt.'];
+        if (!$devices) $controls[] = ['type' => 'Label', 'caption' => 'Keine Geräte in der gewählten Quellkategorie oder ihren Unterkategorien erkannt.'];
         return $controls;
     }
 
