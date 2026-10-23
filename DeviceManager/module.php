@@ -1125,6 +1125,7 @@ class DeviceManager extends IPSModule
                 'source'=>$device['path'],
                 'trade'=>$a['trade'],
                 'variables'=>count($device['functions']),
+                'instanceID'=>$nativeInstance,
                 'create'=>[
                     'moduleID'=>'{7C91D1A2-29C9-4DF7-86BD-BB23E4795C71}',
                     'configuration'=>[
