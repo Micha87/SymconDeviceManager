@@ -107,7 +107,6 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Version 0.4: Gebäudeverwaltung und auswählbare Geräteübernahme mit Dummys und Links.'],
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
-                ['type' => 'SelectCategory', 'name' => 'ManagedBuildingRoot', 'caption' => 'Zielstruktur für Geräteübernahme (Gebäude_neu)'],
                 ['type' => 'SelectCategory', 'name' => 'DeviceSourceCategory', 'caption' => 'Gerätequelle auswählen (Hardware)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
                 ['type' => 'ExpansionPanel', 'caption' => 'Gebäudeverwaltung – neue Struktur', 'items' => [
