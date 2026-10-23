@@ -143,8 +143,7 @@ class DeviceManager extends IPSModule
                 $draftList,
                 ['type'=>'Button','caption'=>'Alles gesehen','onClick'=>'SDM_MarkAllSourceDevicesSeen($id);'],
                 ['type'=>'Button','caption'=>'Gesehene einblenden','onClick'=>'SDM_ShowSeenSourceDevices($id);'],
-                ['type'=>'ValidationTextBox','name'=>'ExistingDeviceSearch','caption'=>'Angelegte Geräte filtern (Volltext)','value'=>$this->ReadAttributeString('ExistingDeviceSearch'),'onChange'=>'SDM_SetExistingDeviceSearch($id, $ExistingDeviceSearch);'],
-                $this->BuildExistingDeviceList()
+                ['type'=>'Label','caption'=>'Neue Geräte grün, angelegte Geräte weiß. Bereits angelegte Geräte über das Zahnrad bearbeiten.']
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
@@ -795,6 +794,17 @@ class DeviceManager extends IPSModule
             ],'values'=>$rows];
     }
 
+    public function GetUnifiedDeviceDialogForm(int $deviceID): array
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) return [['type'=>'Label','caption'=>'Quellgerät nicht gefunden']];
+        $assignment = $this->DeviceAssignment($deviceID,$devices[(string)$deviceID]);
+        if ($this->ManagedDummyID($deviceID,$devices[(string)$deviceID],$assignment)) {
+            return $this->GetExistingDeviceDialogForm($deviceID);
+        }
+        return $this->GetDeviceDialogForm($deviceID);
+    }
+
     public function GetExistingDeviceDialogForm(int $deviceID): array
     {
         $devices = $this->DiscoverPilotDevices();
@@ -1123,6 +1133,7 @@ class DeviceManager extends IPSModule
             }
             $saved[] = ['deviceID' => (int) $id, 'floor' => $a['floor'], 'room' => $a['room'],
                 'trade' => $a['trade'], 'variableCount' => $variableCount,
+                'instanceID' => $managedDummy ?: 0,
                 'rowColor' => ($managedDummy || $allLinked) ? '#FFFFFF' : '#D9F4DD'];
             $deviceOptions[] = ['caption' => $device['name'] . ' | ' . $device['path'], 'value' => (int) $id];
         }
@@ -1134,13 +1145,14 @@ class DeviceManager extends IPSModule
             'type' => 'List', 'name' => 'DeviceDiscoveryRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' sichtbar, ' . $hidden . ' als gesehen ausgeblendet',
             'rowCount' => 18, 'add' => true, 'delete' => false, 'width' => '100%',
             'onEdit' => 'SDM_SaveDeviceDraft($id, json_encode($DeviceDiscoveryRows));',
-            'form' => 'return SDM_GetDeviceDialogForm($id, (int)($DeviceDiscoveryRows["deviceID"] ?? 0));',
+            'form' => 'return SDM_GetUnifiedDeviceDialogForm($id, (int)($DeviceDiscoveryRows["deviceID"] ?? 0));',
             'columns' => [
                 ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '40%', 'add' => 0, 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
                 ['caption' => 'Etage', 'name' => 'floor', 'width' => '12%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
                 ['caption' => 'Raum', 'name' => 'room', 'width' => '18%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
                 ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px', 'add' => 'Unbekannt', 'edit' => ['type' => 'Select', 'options' => $tradeOptions]],
-                ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0, 'edit' => ['type' => 'Label']]
+                ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0, 'edit' => ['type' => 'Label']],
+                ['caption' => 'InstanzID', 'name' => 'instanceID', 'width' => '100px', 'add' => 0, 'edit' => ['type' => 'Label']]
             ],
             'values' => $saved
         ];
