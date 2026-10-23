@@ -480,8 +480,8 @@ class DeviceManager extends IPSModule
     {
         $this->WriteAttributeString('DeviceListSearch', trim($search));
         $list = $this->BuildDeviceDraftList();
-        $this->UpdateFormField('DeviceDraftRows', 'values', json_encode($list['values'], JSON_UNESCAPED_UNICODE));
-        $this->UpdateFormField('DeviceDraftRows', 'caption', $list['caption']);
+        $this->UpdateFormField('DeviceDiscoveryRows', 'values', json_encode($list['values'], JSON_UNESCAPED_UNICODE));
+        $this->UpdateFormField('DeviceDiscoveryRows', 'caption', $list['caption']);
     }
 
     public function OpenDraftDeviceEditor(int $deviceID)
@@ -1131,9 +1131,10 @@ class DeviceManager extends IPSModule
             $tradeOptions[] = ['caption' => $trade, 'value' => $trade];
         }
         return [
-            'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' sichtbar, ' . $hidden . ' als gesehen ausgeblendet',
+            'type' => 'List', 'name' => 'DeviceDiscoveryRows', 'caption' => 'Gefundene Geräte – ' . count($saved) . ' sichtbar, ' . $hidden . ' als gesehen ausgeblendet',
             'rowCount' => 18, 'add' => true, 'delete' => false, 'width' => '100%',
-            'form' => 'return SDM_GetDeviceDialogForm($id, (int)($DeviceDraftRows["deviceID"] ?? 0));',
+            'onEdit' => 'SDM_SaveDeviceDraft($id, json_encode($DeviceDiscoveryRows));',
+            'form' => 'return SDM_GetDeviceDialogForm($id, (int)($DeviceDiscoveryRows["deviceID"] ?? 0));',
             'columns' => [
                 ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '40%', 'add' => 0, 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
                 ['caption' => 'Etage', 'name' => 'floor', 'width' => '12%', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
