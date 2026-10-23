@@ -61,6 +61,7 @@ class ManagedDevice extends IPSModule
             // Symcon List row editor can drop Label fields when a row is edited.
             // Recover immutable source identity from its original row position.
             $id = (int)($entry['sourceID'] ?? ($sourceIDs[$index] ?? 0));
+            if (!isset($vars[$id])) $id = (int)($sourceIDs[$index] ?? 0);
             if ($id > 0) $selected[$id] = $entry;
         }
         $rows = [];
@@ -82,8 +83,8 @@ class ManagedDevice extends IPSModule
                     'columns'=>[
                         ['caption'=>'Verlinken','name'=>'enabled','width'=>'85px','edit'=>['type'=>'CheckBox']],
                         ['caption'=>'Linkname','name'=>'linkName','width'=>'35%','edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Quellname','name'=>'sourceName','width'=>'45%','edit'=>['type'=>'Label']],
-                        ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'90px','edit'=>['type'=>'Label']]
+                        ['caption'=>'Quellname','name'=>'sourceName','width'=>'45%','edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'90px','edit'=>['type'=>'ValidationTextBox']]
                     ],
                     'values'=>$rows
                 ]
@@ -108,6 +109,7 @@ class ManagedDevice extends IPSModule
         $sourceIDs = array_keys($sourceVars);
         foreach ($saved as $index => $row) {
             $sourceID = (int)($row['sourceID'] ?? ($sourceIDs[$index] ?? 0));
+            if (!isset($sourceVars[$sourceID])) $sourceID = (int)($sourceIDs[$index] ?? 0);
             // Symcon omits read-only Label fields from edited List rows.
             // Recover by stable source row position, never by link name.
             if (!$sourceID || !isset($sourceVars[$sourceID])) continue;
