@@ -656,7 +656,7 @@ class DeviceManager extends IPSModule
         }
         $drafts = json_decode($this->ReadAttributeString('ManagedEditDraft'),true);
         $draft = is_array($drafts) ? ($drafts[(string)$deviceID] ?? []) : [];
-        $form = $this->GetDeviceDialogForm($deviceID);
+        $form = array_slice($this->GetDeviceDialogForm($deviceID),0,5);
         $form[0] = ['type'=>'Label','caption'=>'Gerät: '.$device['name'].' ('.$deviceID.') | Dummy: '.$dummy];
         foreach (['floor'=>1,'room'=>2,'trade'=>3] as $field=>$index) {
             $form[$index]['value'] = $draft[$field] ?? $a[$field];
