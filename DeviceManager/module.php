@@ -1127,7 +1127,7 @@ class DeviceManager extends IPSModule
                 'type'=>'Gerät',
                 'floor'=>$floor,
                 'room'=>$room,
-                'device'=>$deviceName,
+                'name'=>$deviceName,
                 'source'=>$device['path'],
                 'trade'=>$trade,
                 'variables'=>count($device['functions']),
@@ -1148,13 +1148,15 @@ class DeviceManager extends IPSModule
             ];
         }
         return [
-            'type'=>'Configurator','name'=>'DeviceNativeConfigurator','caption'=>'Geräteübersicht – bestehende Geräte über das Instanzsymbol bearbeiten',
+            'type'=>'Configurator','name'=>'DeviceNativeConfigurator','caption'=>'Geräteübersicht',
             'rowCount'=>18,
+            'add'=>false,
+            'delete'=>false,
             'columns'=>[
                 ['caption'=>'Typ','name'=>'type','width'=>'70px'],
                 ['caption'=>'Etage','name'=>'floor','width'=>'100px'],
                 ['caption'=>'Raum','name'=>'room','width'=>'140px'],
-                ['caption'=>'Gerät','name'=>'device','width'=>'20%'],
+                ['caption'=>'Gerät','name'=>'name','width'=>'20%'],
                 ['caption'=>'Quelle','name'=>'source','width'=>'35%'],
                 ['caption'=>'Gewerk','name'=>'trade','width'=>'120px'],
                 ['caption'=>'Variablen','name'=>'variables','width'=>'90px'],
