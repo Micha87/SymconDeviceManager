@@ -384,7 +384,8 @@ class DeviceManager extends IPSModule
             'floor' => $saved['floor'] ?? $proposal['floor'],
             'room' => $saved['room'] ?? $proposal['room'],
             'trade' => $saved['trade'] ?? $proposal['trade'],
-            'variables' => $saved['variables'] ?? []
+            'variables' => $saved['variables'] ?? [],
+            'linkNames' => $saved['linkNames'] ?? []
         ];
     }
 
@@ -500,7 +501,8 @@ class DeviceManager extends IPSModule
                 'onEdit'=>'SDM_SaveDialogVariableSelection($id, '.$deviceID.', json_encode($selectedVariables));',
                 'columns'=>[
                     ['caption'=>'Verlinken','name'=>'enabled','width'=>'95px','edit'=>['type'=>'CheckBox']],
-                    ['caption'=>'Linkname','name'=>'name','width'=>'auto','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                    ['caption'=>'Linkname (änderbar)','name'=>'name','width'=>'45%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                    ['caption'=>'Quellname','name'=>'sourceName','width'=>'35%'],
                     ['caption'=>'ID','name'=>'variableID','width'=>'90px','save'=>true]
                 ],
                 'values'=>$this->DeviceDialogVariables($deviceID)],
@@ -573,11 +575,26 @@ class DeviceManager extends IPSModule
             if (!$link) {
                 $link = IPS_CreateLink();
                 IPS_SetParent($link,$dummy);
-                IPS_SetName($link,$a['linkNames'][(string)$variableID] ?? ($function === 'Wert' ? IPS_GetName($variableID) : $function));
+                IPS_SetName($link,$a['linkNames'][(string)$variableID] ?? $this->SuggestedLinkName((string)$function,(int)$variableID));
             }
             IPS_SetLinkTargetID($link,$variableID);
         }
         $this->ReloadForm();
+    }
+
+    private function SuggestedLinkName(string $function, int $variableID): string
+    {
+        $sourceName = trim(IPS_GetName($variableID));
+        $ident = trim((string)(IPS_GetObject($variableID)['ObjectIdent'] ?? ''));
+        if ($sourceName !== '' && !preg_match('/^(Wert|Value)(\\s+\\d+)?$/iu', $sourceName)) return $sourceName;
+        if ($ident !== '' && !preg_match('/^(Value|Wert)$/iu', $ident)) return $ident;
+        if ($function !== 'Wert' && !preg_match('/^Wert\\s+\\d+$/iu',$function)) return $function;
+        $parent = IPS_GetParent($variableID);
+        if ($parent && IPS_ObjectExists($parent)) {
+            $parentName = trim(IPS_GetName($parent));
+            if ($parentName !== '' && !preg_match('/^(Wert|Value)$/iu',$parentName)) return $parentName;
+        }
+        return $sourceName !== '' ? $sourceName : 'Variable '.$variableID;
     }
 
     private function DeviceDialogVariables(int $deviceID): array
@@ -589,7 +606,9 @@ class DeviceManager extends IPSModule
         foreach ($devices[(string)$deviceID]['functions'] as $function=>$variableID) {
             if (!IPS_ObjectExists($variableID)) continue;
             $rows[] = ['enabled'=>array_key_exists((string)$variableID,$a['variables']) ? (bool)$a['variables'][(string)$variableID] : true,
-                'name'=>$a['linkNames'][(string)$variableID] ?? ($function === 'Wert' ? IPS_GetName($variableID) : $function),'variableID'=>(int)$variableID];
+                'name'=>$a['linkNames'][(string)$variableID] ?? $this->SuggestedLinkName((string)$function,(int)$variableID),
+                'sourceName'=>IPS_GetName($variableID),
+                'variableID'=>(int)$variableID];
         }
         return $rows;
     }
@@ -963,6 +982,7 @@ class DeviceManager extends IPSModule
         }
         $roomOptions = array_values($roomOptions);
         foreach ($devices as $id => $device) {
+            if (count($device['functions']) === 0) continue;
             $allLinked = count($device['functions']) > 0;
             foreach ($device['functions'] as $variableID) {
                 if (!isset($linked[$variableID])) { $allLinked = false; break; }
