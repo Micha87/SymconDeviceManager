@@ -137,32 +137,7 @@ class DeviceManager extends IPSModule
                 ]],
                 ['type' => 'Label', 'caption' => 'Geräteübernahme: Ziel ist die oben ausgewählte Gebäudestruktur. Der native Hinweis „Erstelle neue Instanzen in home“ ist ein festes Element des Symcon-Configurators und wird hier nicht verwendet. Vorerst nur Vorschau, keine Erstellung.'],
                 $deviceConfigurator,
-                $testEditor,
-                ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
-                    'rowCount' => 12, 'add' => false, 'delete' => false,
-                    'columns' => [
-                        ['caption' => 'Raum', 'name' => 'room', 'width' => '150px'],
-                        ['caption' => 'Typ', 'name' => 'deviceType', 'width' => '110px'],
-                        ['caption' => 'Gerät', 'name' => 'device', 'width' => '240px'],
-                        ['caption' => 'Funktionen', 'name' => 'functions', 'width' => '230px'],
-                        ['caption' => 'Variablen', 'name' => 'count', 'width' => '90px'],
-                        ['caption' => 'Instanz-IDs', 'name' => 'instances', 'width' => '160px']
-                    ],
-                    'values' => $grouped
-                ],
-                ['type' => 'List', 'name' => 'Preview', 'caption' => 'Gefilterte Datenpunkte',
-                    'rowCount' => 15, 'add' => false, 'delete' => false, 'sort' => ['column' => 'room', 'direction' => 'ascending'],
-                    'columns' => [
-                        ['caption' => 'Typ', 'name' => 'deviceType', 'width' => '110px'],
-                        ['caption' => 'Raumvorschlag', 'name' => 'room', 'width' => '160px'],
-                        ['caption' => 'Gerätevorschlag', 'name' => 'device', 'width' => '230px'],
-                        ['caption' => 'Funktion', 'name' => 'function', 'width' => '120px'],
-                        ['caption' => 'Instanz', 'name' => 'instance', 'width' => '80px'],
-                        ['caption' => 'Variable', 'name' => 'variable', 'width' => '80px'],
-                        ['caption' => 'Zuordnungsqualität', 'name' => 'confidence', 'width' => '90px']
-                    ],
-                    'values' => $filtered
-                ]
+                $testEditor
             ],
             'actions' => [
                 ['type' => 'Button', 'caption' => 'Hardware scannen (nur lesen)', 'onClick' => 'SDM_Scan($id); IPS_RequestAction($id, "RefreshForm", 0);'],
