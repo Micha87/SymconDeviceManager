@@ -34,6 +34,7 @@ class DeviceManager extends IPSModule
         $this->RegisterAttributeBoolean('ShowImportedRooms', false);
         $this->RegisterAttributeString('DeviceSelections', '{}');
         $this->RegisterAttributeString('DeviceAssignments', '{}');
+        $this->RegisterAttributeInteger('EditingDevice', 0);
     }
 
     public function ApplyChanges()
@@ -131,11 +132,11 @@ class DeviceManager extends IPSModule
                         ['type' => 'Button', 'caption' => 'Ausgewählte Kategorien in Zielstruktur anlegen', 'onClick' => 'SDM_ApplyImportSelection($id);']
                     ])]
                 ]],
-                ['type' => 'ExpansionPanel', 'caption' => 'Geräteübernahme – KNX (Vorschau und Auswahl)', 'items' => array_merge([
-                    ['type' => 'Label', 'caption' => 'Quelle und Ziel werden über die Kategorie-IDs oben eingestellt. Es werden nur direkte Geräte und Dummy-Gruppen gelesen; Unterkategorien mit Skripten bleiben unberücksichtigt.'],
+                ['type' => 'ExpansionPanel', 'caption' => 'Geräteübernahme – Zuordnung und Variablenauswahl', 'items' => array_merge([
+                    ['type' => 'Label', 'caption' => 'Hardware wird rekursiv erkannt. Geräte markieren, dann je Gerät Raum, Gewerk und zu verlinkende Variablen festlegen. Es wird erst beim Übernehmen geschrieben.'],
                     ['type' => 'Button', 'caption' => 'Geräte neu erkennen', 'onClick' => 'IPS_RequestAction($id, "RefreshForm", 0);']
                 ], $deviceItems, [
-                    ['type' => 'Button', 'caption' => 'Ausgewählte Geräte als Dummys und Links anlegen', 'onClick' => 'SDM_ApplyDeviceSelection($id);']
+                    ['type' => 'Button', 'caption' => 'Ausgewählte Geräte mit gewählten Variablen übernehmen', 'onClick' => 'SDM_ApplyDeviceSelection($id);']
                 ])],
                 ['type' => 'List', 'name' => 'Devices', 'caption' => 'Geräteübersicht',
                     'rowCount' => 12, 'add' => false, 'delete' => false,
@@ -395,41 +396,107 @@ class DeviceManager extends IPSModule
         return 0;
     }
 
+    private function DeviceAssignment($id, $device)
+    {
+        $all = json_decode($this->ReadAttributeString('DeviceAssignments'), true);
+        if (!is_array($all)) $all = [];
+        $proposal = $device['proposal'];
+        $saved = $all[(string) $id] ?? [];
+        return [
+            'floor' => $saved['floor'] ?? $proposal['floor'],
+            'room' => $saved['room'] ?? $proposal['room'],
+            'trade' => $saved['trade'] ?? $proposal['trade'],
+            'variables' => $saved['variables'] ?? []
+        ];
+    }
+
     private function BuildDeviceImportControls()
     {
         $devices = $this->DiscoverPilotDevices();
-        $target = $this->GetPilotTarget();
         $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
         if (!is_array($selected)) $selected = [];
         $controls = [];
         $sourceID = $this->ReadPropertyInteger('DeviceSourceCategory');
         $sourceName = ($sourceID > 0 && IPS_ObjectExists($sourceID)) ? IPS_GetLocation($sourceID) : 'nicht gefunden';
-        $targetName = $target ? IPS_GetLocation($target) : 'nicht gefunden / außerhalb Gebäude_neu';
-        $controls[] = ['type' => 'Label', 'caption' => 'Aktuelle Quelle: ' . $sourceName . ' (ID ' . $sourceID . ') | Ziel: ' . $targetName];
-        $controls[] = ['type' => 'Label', 'caption' => count($devices) . ' Geräte rekursiv erkannt (max. 500). Allgemeine Scan-Filter werden nicht angewendet. Skript-Unterkategorien werden ignoriert.'];
-        if (!$target) $controls[] = ['type' => 'Label', 'caption' => 'Zielkategorie fehlt oder liegt nicht unter der verwalteten Gebäudestruktur.'];
+        $controls[] = ['type' => 'Label', 'caption' => 'Quelle: ' . $sourceName . ' | Zielwurzel: ' . IPS_GetLocation($this->ReadPropertyInteger('ManagedBuildingRoot'))];
+        $controls[] = ['type' => 'Label', 'caption' => count($devices) . ' Geräte erkannt. Markiere Geräte und bearbeite ihre Zuordnung einzeln. Skript-Unterkategorien werden ignoriert.'];
+        $editing = $this->ReadAttributeInteger('EditingDevice');
+        $deviceOptions = [['caption' => 'Gerät zur Bearbeitung auswählen', 'value' => 0]];
         foreach ($devices as $id => $device) {
-            $dummy = $target ? $this->FindDeviceDummy($target, $device['name']) : 0;
-            $functionCount = count($device['functions']);
-            $previewFunctions = array_slice($device['functions'], 0, 4, true);
-            $functions = implode(', ', array_map(static function ($name, $variable) {
-                return $name . ' → ' . $variable;
-            }, array_keys($previewFunctions), array_values($previewFunctions)));
-            if ($functionCount > 4) $functions .= ', … (insgesamt ' . $functionCount . ' Variablen)';
-            $proposal = $device['proposal'];
-            $caption = $device['name'] . ' [' . $functions . '] — ' . $device['path'] . ' | Vorschlag: ' . ($proposal['floor'] ?: '?') . '/' . ($proposal['room'] ?: '?') . '/' . $proposal['trade'];
-            if ($dummy) {
-                $controls[] = ['type' => 'Label', 'caption' => '✓ ' . $caption . ' (Dummy vorhanden: ' . $dummy . ')'];
-            } else {
-                $controls[] = [
-                    'type' => 'CheckBox', 'name' => 'DeviceSelect_' . $id,
-                    'caption' => $caption, 'value' => !empty($selected[$id]),
-                    'onChange' => 'SDM_SetDeviceSelection($id, ' . $id . ', $DeviceSelect_' . $id . ');'
-                ];
+            $assignment = $this->DeviceAssignment($id, $device);
+            $caption = $device['name'] . ' → ' . ($assignment['floor'] ?: '?') . '/' . ($assignment['room'] ?: '?') . '/' . ($assignment['trade'] ?: '?') . ' (' . count($device['functions']) . ' Variablen)';
+            $controls[] = ['type' => 'CheckBox', 'name' => 'DeviceSelect_' . $id,
+                'caption' => $caption, 'value' => !empty($selected[$id]),
+                'onChange' => 'SDM_SetDeviceSelection($id, ' . $id . ', $DeviceSelect_' . $id . ');'];
+            if (!empty($selected[$id])) $deviceOptions[] = ['caption' => $device['name'] . ' (' . $id . ')', 'value' => (int) $id];
+        }
+        $controls[] = ['type' => 'Select', 'name' => 'EditingDevice', 'caption' => 'Markiertes Gerät bearbeiten',
+            'value' => isset($selected[(string) $editing]) ? $editing : 0, 'options' => $deviceOptions,
+            'onChange' => 'SDM_SetEditingDevice($id, $EditingDevice);'];
+        if ($editing > 0 && !empty($selected[(string) $editing]) && isset($devices[(string) $editing])) {
+            $device = $devices[(string) $editing];
+            $assignment = $this->DeviceAssignment($editing, $device);
+            $plan = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
+            $floorOptions = [['caption' => 'Etage wählen', 'value' => '']];
+            foreach (array_keys($plan) as $floor) $floorOptions[] = ['caption' => $floor, 'value' => $floor];
+            if ($assignment['floor'] !== '' && !isset($plan[$assignment['floor']])) $floorOptions[] = ['caption' => $assignment['floor'] . ' (Vorschlag, neu)', 'value' => $assignment['floor']];
+            $roomOptions = [['caption' => 'Raum wählen', 'value' => '']];
+            foreach (($plan[$assignment['floor']] ?? []) as $room) $roomOptions[] = ['caption' => $room, 'value' => $room];
+            if ($assignment['room'] !== '' && !in_array($assignment['room'], $plan[$assignment['floor']] ?? [], true)) $roomOptions[] = ['caption' => $assignment['room'] . ' (Vorschlag, neu)', 'value' => $assignment['room']];
+            $trades = ['Beleuchtung', 'Heizung', 'Rollladen', 'Multimedia', 'Steckdosen', 'Sensoren', 'Sonstige'];
+            $tradeOptions = [['caption' => 'Gewerk auswählen', 'value' => 'Unbekannt']];
+            foreach ($trades as $trade) $tradeOptions[] = ['caption' => $trade, 'value' => $trade];
+            $controls[] = ['type' => 'Label', 'caption' => 'Bearbeitung: ' . $device['path']];
+            $controls[] = ['type' => 'Select', 'name' => 'AssignFloor', 'caption' => 'Etage', 'value' => $assignment['floor'], 'options' => $floorOptions,
+                'onChange' => 'SDM_SetDeviceAssignment($id, ' . $editing . ', "floor", $AssignFloor);'];
+            $controls[] = ['type' => 'Select', 'name' => 'AssignRoom', 'caption' => 'Raum', 'value' => $assignment['room'], 'options' => $roomOptions,
+                'onChange' => 'SDM_SetDeviceAssignment($id, ' . $editing . ', "room", $AssignRoom);'];
+            $controls[] = ['type' => 'Select', 'name' => 'AssignTrade', 'caption' => 'Gewerk', 'value' => $assignment['trade'], 'options' => $tradeOptions,
+                'onChange' => 'SDM_SetDeviceAssignment($id, ' . $editing . ', "trade", $AssignTrade);'];
+            $controls[] = ['type' => 'ValidationTextBox', 'name' => 'CustomRoom', 'caption' => 'Alternativer Raumname (optional; Eingabe bestätigen)',
+                'value' => $assignment['room'], 'onChange' => 'SDM_SetDeviceAssignment($id, ' . $editing . ', "room", $CustomRoom);'];
+            $controls[] = ['type' => 'Label', 'caption' => 'Variablen auswählen: Haken = Link wird angelegt; bestehende Links werden nicht gelöscht.'];
+            foreach ($device['functions'] as $function => $variableID) {
+                $enabled = array_key_exists((string) $variableID, $assignment['variables']) ? (bool) $assignment['variables'][(string) $variableID] : true;
+                $controls[] = ['type' => 'CheckBox', 'name' => 'VariableSelect_' . $variableID,
+                    'caption' => $function . ' → ' . IPS_GetName($variableID) . ' (' . $variableID . ')',
+                    'value' => $enabled,
+                    'onChange' => 'SDM_SetDeviceVariable($id, ' . $editing . ', ' . $variableID . ', $VariableSelect_' . $variableID . ');'];
             }
         }
-        if (!$devices) $controls[] = ['type' => 'Label', 'caption' => 'Keine Geräte in der gewählten Quellkategorie oder ihren Unterkategorien erkannt.'];
+        if (!$devices) $controls[] = ['type' => 'Label', 'caption' => 'Keine Geräte gefunden.'];
         return $controls;
+    }
+
+    public function SetEditingDevice(int $deviceID)
+    {
+        $this->WriteAttributeInteger('EditingDevice', $deviceID);
+        $this->ReloadForm();
+    }
+
+    public function SetDeviceAssignment(int $deviceID, string $field, string $value)
+    {
+        if (!in_array($field, ['floor', 'room', 'trade'], true)) throw new Exception('Ungültiges Zuordnungsfeld');
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string) $deviceID])) throw new Exception('Gerät nicht gefunden');
+        $all = json_decode($this->ReadAttributeString('DeviceAssignments'), true);
+        if (!is_array($all)) $all = [];
+        if (!isset($all[(string) $deviceID])) $all[(string) $deviceID] = $this->DeviceAssignment($deviceID, $devices[(string) $deviceID]);
+        $all[(string) $deviceID][$field] = trim($value);
+        if ($field === 'floor') $all[(string) $deviceID]['room'] = '';
+        $this->WriteAttributeString('DeviceAssignments', json_encode($all, JSON_UNESCAPED_UNICODE));
+        $this->ReloadForm();
+    }
+
+    public function SetDeviceVariable(int $deviceID, int $variableID, bool $enabled)
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string) $deviceID]) || !in_array($variableID, $devices[(string) $deviceID]['functions'], true)) throw new Exception('Variable gehört nicht zum Gerät');
+        $all = json_decode($this->ReadAttributeString('DeviceAssignments'), true);
+        if (!is_array($all)) $all = [];
+        if (!isset($all[(string) $deviceID])) $all[(string) $deviceID] = $this->DeviceAssignment($deviceID, $devices[(string) $deviceID]);
+        $all[(string) $deviceID]['variables'][(string) $variableID] = $enabled;
+        $this->WriteAttributeString('DeviceAssignments', json_encode($all, JSON_UNESCAPED_UNICODE));
     }
 
     public function SetDeviceSelection(int $deviceID, bool $enabled)
@@ -439,32 +506,50 @@ class DeviceManager extends IPSModule
         if ($enabled) $selected[(string) $deviceID] = true;
         else unset($selected[(string) $deviceID]);
         $this->WriteAttributeString('DeviceSelections', json_encode($selected));
+        if ($enabled) $this->WriteAttributeInteger('EditingDevice', $deviceID);
+        $this->ReloadForm();
     }
 
     public function ApplyDeviceSelection()
     {
-        $target = $this->GetPilotTarget();
-        if (!$target) throw new Exception('Zielkategorie fehlt oder liegt nicht unter der verwalteten Gebäudestruktur.');
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        if ($root <= 0 || !IPS_ObjectExists($root) || IPS_GetObject($root)['ObjectType'] !== 0) throw new Exception('Gebäudewurzel fehlt');
         $selected = json_decode($this->ReadAttributeString('DeviceSelections'), true);
         if (!is_array($selected) || !$selected) throw new Exception('Bitte mindestens ein Gerät auswählen.');
         $devices = $this->DiscoverPilotDevices();
+        $operations = [];
         foreach (array_keys($selected) as $id) {
-            if (!isset($devices[$id])) continue;
+            if (!isset($devices[$id])) throw new Exception('Ausgewähltes Gerät nicht mehr vorhanden: ' . $id);
             $device = $devices[$id];
-            $dummy = $this->FindDeviceDummy($target, $device['name']);
+            $assignment = $this->DeviceAssignment($id, $device);
+            foreach (['floor', 'room', 'trade'] as $field) {
+                if ($assignment[$field] === '' || $assignment[$field] === 'Unbekannt' || strpos($assignment[$field], '/') !== false) {
+                    throw new Exception('Etage, Raum und Gewerk für ' . $device['name'] . ' vollständig auswählen.');
+                }
+            }
+            $chosen = [];
+            foreach ($device['functions'] as $function => $variableID) {
+                if (isset($assignment['variables'][(string) $variableID]) && !$assignment['variables'][(string) $variableID]) continue;
+                if (IPS_ObjectExists($variableID) && IPS_GetObject($variableID)['ObjectType'] === 2) $chosen[$function] = $variableID;
+            }
+            if (!$chosen) throw new Exception('Keine Variablen ausgewählt: ' . $device['name']);
+            $operations[] = ['device' => $device, 'assignment' => $assignment, 'functions' => $chosen];
+        }
+        foreach ($operations as $op) {
+            $a = $op['assignment'];
+            $floor = $this->FindOrCreateCategory($root, $a['floor']);
+            $room = $this->FindOrCreateCategory($floor, $a['room']);
+            $target = $this->FindOrCreateCategory($room, $a['trade']);
+            $dummy = $this->FindDeviceDummy($target, $op['device']['name']);
             if (!$dummy) {
                 $dummy = IPS_CreateInstance('{485D0419-BE97-4548-AA9C-C083EB82E61E}');
                 IPS_SetParent($dummy, $target);
-                IPS_SetName($dummy, $device['name']);
+                IPS_SetName($dummy, $op['device']['name']);
             }
-            foreach ($device['functions'] as $function => $variableID) {
-                if (!IPS_ObjectExists($variableID) || IPS_GetObject($variableID)['ObjectType'] !== 2) continue;
+            foreach ($op['functions'] as $function => $variableID) {
                 $link = 0;
                 foreach (IPS_GetChildrenIDs($dummy) as $childID) {
-                    if (IPS_GetObject($childID)['ObjectType'] === 6 && IPS_GetName($childID) === $function) {
-                        $link = $childID;
-                        break;
-                    }
+                    if (IPS_GetObject($childID)['ObjectType'] === 6 && IPS_GetName($childID) === $function) { $link = $childID; break; }
                 }
                 if (!$link) {
                     $link = IPS_CreateLink();
@@ -475,6 +560,7 @@ class DeviceManager extends IPSModule
             }
         }
         $this->WriteAttributeString('DeviceSelections', '{}');
+        $this->WriteAttributeInteger('EditingDevice', 0);
         $this->ReloadForm();
     }
 
