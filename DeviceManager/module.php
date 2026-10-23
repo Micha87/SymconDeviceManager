@@ -526,7 +526,7 @@ class DeviceManager extends IPSModule
         $this->UpdateFormField('DeviceDraftRows', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
     }
 
-    public function SaveDeviceDraft($rowsInput)
+    public function SaveDeviceDraft(string $rowsInput)
     {
         if (is_string($rowsInput)) {
             $rows = json_decode($rowsInput, true);
@@ -570,7 +570,7 @@ class DeviceManager extends IPSModule
         }
     }
 
-    public function DeleteDeviceDraft($rowsJSON)
+    public function DeleteDeviceDraft(string $rowsJSON)
     {
         $this->SaveDeviceDraft($rowsJSON);
     }
