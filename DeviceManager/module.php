@@ -545,6 +545,7 @@ class DeviceManager extends IPSModule
             $rows[] = ['deviceID'=>(int)$id, 'name'=>$device['name'], 'room'=>$a['floor'].' / '.$a['room'], 'trade'=>$a['trade'], 'dummyID'=>$dummy, 'links'=>$links];
         }
         return ['type'=>'List','name'=>'ExistingDevices','caption'=>'Bereits angelegte Geräte – Variablenbestand','rowCount'=>10,'add'=>false,'delete'=>false,
+            'form'=>'return SDM_GetExistingDeviceDialogForm($id, (int)($ExistingDevices["deviceID"] ?? 0));',
             'columns'=>[
                 ['caption'=>'Gerät','name'=>'name','width'=>'35%'],
                 ['caption'=>'Raum','name'=>'room','width'=>'25%'],
@@ -552,6 +553,39 @@ class DeviceManager extends IPSModule
                 ['caption'=>'Dummy-ID','name'=>'dummyID','width'=>'90px'],
                 ['caption'=>'Links','name'=>'links','width'=>'70px']
             ],'values'=>$rows];
+    }
+
+    public function GetExistingDeviceDialogForm(int $deviceID): array
+    {
+        $devices = $this->DiscoverPilotDevices();
+        if (!isset($devices[(string)$deviceID])) return [['type'=>'Label','caption'=>'Gerät nicht gefunden']];
+        $device = $devices[(string)$deviceID];
+        $a = $this->DeviceAssignment($deviceID,$device);
+        $root = $this->ReadPropertyInteger('ManagedBuildingRoot');
+        $floor = $this->FindCategoryByName($root,$a['floor']);
+        $room = $floor ? $this->FindCategoryByName($floor,$a['room']) : 0;
+        $trade = $room ? $this->FindCategoryByName($room,$a['trade']) : 0;
+        $dummy = $trade ? $this->FindDeviceDummy($trade,$device['name']) : 0;
+        if (!$dummy) return [['type'=>'Label','caption'=>'Dummy nicht mehr vorhanden']];
+        $linked = [];
+        foreach (IPS_GetChildrenIDs($dummy) as $child) {
+            if (IPS_GetObject($child)['ObjectType'] === 6) $linked[IPS_GetLink($child)['TargetID']] = true;
+        }
+        $rows = [];
+        foreach ($device['functions'] as $function=>$variableID) {
+            $rows[] = ['enabled'=>isset($linked[$variableID]),'name'=>$function.' – '.IPS_GetName($variableID),'variableID'=>(int)$variableID];
+        }
+        return [
+            ['type'=>'Label','caption'=>'Gerät: '.$device['name'].' ('.$deviceID.') | Dummy: '.$dummy],
+            ['type'=>'Label','caption'=>'Etage: '.$a['floor'].' | Raum: '.$a['room'].' | Gewerk: '.$a['trade']],
+            ['type'=>'Label','caption'=>'Aktuelle Verknüpfungen sind markiert. Änderungen hier sind zunächst eine Auswahl; Links werden nicht durch OK allein gelöscht.'],
+            ['type'=>'List','name'=>'selectedVariables','caption'=>'Variablen verlinken','rowCount'=>12,'add'=>false,'delete'=>false,
+                'columns'=>[
+                    ['caption'=>'Verlinken','name'=>'enabled','width'=>'95px','edit'=>['type'=>'CheckBox']],
+                    ['caption'=>'Variable','name'=>'name','width'=>'auto'],
+                    ['caption'=>'ID','name'=>'variableID','width'=>'90px']
+                ],'values'=>$rows]
+        ];
     }
 
     private function BuildLinkManagement(): array
