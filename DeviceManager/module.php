@@ -193,7 +193,7 @@ class DeviceManager extends IPSModule
         return count($rows);
     }
 
-    public function RequestAction(string $Ident, string $Value)
+    public function RequestAction($Ident, $Value)
     {
         if ($Ident === 'RefreshForm') {
             $this->ReloadForm();
