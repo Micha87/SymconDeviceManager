@@ -140,6 +140,7 @@ class DeviceManager extends IPSModule
                 ['type' => 'Label', 'caption' => 'Geräte über Hinzufügen auswählen. Im Dialog werden Etage, Raum, Gewerk und Variablen festgelegt. Mit Änderungen übernehmen wird die Auswahl gespeichert; es werden noch keine Objekte erstellt.'],
                 $deviceSearch,
                 $nativeConfigurator,
+                $this->BuildDeviceTablePrototype(),
 
             ],
             'actions' => [
@@ -1096,6 +1097,69 @@ class DeviceManager extends IPSModule
     {
         $this->WriteAttributeInteger('ManageDeviceID',$deviceID);
         $this->ReloadForm();
+    }
+
+    // Experimental single-table editor. Does not replace the production Configurator.
+    private function BuildDeviceTablePrototype(): array
+    {
+        $rows = [];
+        foreach ($this->DiscoverPilotDevices() as $id => $device) {
+            $a = $this->DeviceAssignment((int)$id, $device);
+            $rows[] = [
+                'deviceID'=>(int)$id,
+                'deviceName'=>(string)$a['deviceName'],
+                'floor'=>(string)$a['floor'],
+                'room'=>(string)$a['room'],
+                'trade'=>(string)$a['trade'],
+                'source'=>(string)$device['path']
+            ];
+        }
+        return [
+            'type'=>'ExpansionPanel',
+            'caption'=>'PROTOTYP – Geräte direkt in einer Tabelle bearbeiten',
+            'expanded'=>false,
+            'items'=>[
+                ['type'=>'Label','caption'=>'Testansicht: Zahnrad öffnet die Bearbeitung von Gerätename, Etage, Raum und Gewerk. Bestehende Instanzen und Links werden nicht verändert.'],
+                ['type'=>'List','name'=>'DeviceTablePrototype','caption'=>'Geräte (Prototyp)','rowCount'=>12,
+                    'add'=>false,'delete'=>false,
+                    'onEdit'=>'SDM_SaveDeviceTablePrototype($id, json_encode($DeviceTablePrototype));',
+                    'columns'=>[
+                        ['caption'=>'Quell-ID','name'=>'deviceID','width'=>'90px','save'=>true],
+                        ['caption'=>'Gerätename','name'=>'deviceName','width'=>'23%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Etage','name'=>'floor','width'=>'12%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Raum','name'=>'room','width'=>'17%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Gewerk','name'=>'trade','width'=>'16%','save'=>true,'edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Quelle','name'=>'source','width'=>'25%','save'=>true]
+                    ],
+                    'values'=>$rows
+                ]
+            ]
+        ];
+    }
+
+    public function SaveDeviceTablePrototype(string $json): void
+    {
+        $rows = json_decode($json,true);
+        if (!is_array($rows)) throw new Exception('Prototyp-Tabelle nicht lesbar.');
+        if (isset($rows['deviceID'])) $rows = [$rows];
+        $devices = $this->DiscoverPilotDevices();
+        $all = json_decode($this->ReadAttributeString('DeviceAssignments'),true);
+        if (!is_array($all)) $all = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $id = (int)($row['deviceID'] ?? 0);
+            if ($id <= 0 || !isset($devices[$id])) continue;
+            $assignment = $this->DeviceAssignment($id,$devices[$id]);
+            foreach (['deviceName','floor','room','trade'] as $field) {
+                if (!isset($row[$field]) || !is_string($row[$field])) continue;
+                $value = trim($row[$field]);
+                if ($value === '' || mb_strlen($value,'UTF-8') > 100 || strpos($value,'/') !== false) continue;
+                $assignment[$field] = $value;
+            }
+            $all[(string)$id] = $assignment;
+        }
+        $this->WriteAttributeString('DeviceAssignments',json_encode($all,JSON_UNESCAPED_UNICODE));
+        $this->UpdateFormField('DeviceNativeConfigurator','values',json_encode($this->BuildNativeDeviceConfigurator()['values'],JSON_UNESCAPED_UNICODE));
     }
 
     private function BuildNativeDeviceConfigurator(): array
