@@ -479,14 +479,13 @@ class DeviceManager extends IPSModule
             'type' => 'List', 'name' => 'DeviceDraftRows', 'caption' => 'Geräte zur Übernahme vormerken (Hinzufügen öffnet Dialog)',
             'rowCount' => 6, 'add' => true, 'delete' => true,
             'columns' => [
-                ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '220px', 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
-                ['caption' => 'Etage', 'name' => 'floor', 'width' => '90px', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
-                ['caption' => 'Raum', 'name' => 'room', 'width' => '130px', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
-                ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px', 'edit' => ['type' => 'Select', 'options' => $tradeOptions]],
-                ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px']
+                ['caption' => 'Quellgerät', 'name' => 'deviceID', 'width' => '220px', 'add' => 0, 'edit' => ['type' => 'Select', 'options' => $deviceOptions]],
+                ['caption' => 'Etage', 'name' => 'floor', 'width' => '90px', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $floorOptions]],
+                ['caption' => 'Raum', 'name' => 'room', 'width' => '130px', 'add' => '', 'edit' => ['type' => 'Select', 'options' => $roomOptions]],
+                ['caption' => 'Gewerk', 'name' => 'trade', 'width' => '130px', 'add' => 'Unbekannt', 'edit' => ['type' => 'Select', 'options' => $tradeOptions]],
+                ['caption' => 'Variablen', 'name' => 'variableCount', 'width' => '90px', 'add' => 0]
             ],
             'values' => $saved,
-            'onAdd' => 'SDM_AddDeviceDraft($id);',
             'onDelete' => 'SDM_DeleteDeviceDraft($id, $DeviceDraftRows);',
             'onEdit' => 'SDM_SaveDeviceDraft($id, $DeviceDraftRows);'
         ];
