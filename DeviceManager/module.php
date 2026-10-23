@@ -701,13 +701,18 @@ class DeviceManager extends IPSModule
             $row['name'] = $a['linkNames'][$varID] ?? (isset($linked[(int)$varID]) ? IPS_GetName($linked[(int)$varID]) : IPS_GetName((int)$varID));
         }
         unset($row);
+        foreach ($rows as &$row) {
+            $row['sourceVariableID'] = (int)$row['variableID'];
+            $row['targetLinkID'] = isset($linked[(int)$row['variableID']]) ? (int)$linked[(int)$row['variableID']] : 0;
+        }
+        unset($row);
         $form[4]['values'] = $rows;
         $form[4]['onEdit'] = 'SDM_SaveExistingLinkNames($id, '.$deviceID.', json_encode($selectedVariables));';
         $form[4]['columns'] = [
             ['caption'=>'Verlinken','name'=>'enabled','width'=>'75px','edit'=>['type'=>'CheckBox']],
             ['caption'=>'Linkname','name'=>'name','width'=>'30%','edit'=>['type'=>'ValidationTextBox'],'save'=>true],
-            ['caption'=>'Quelle (ID / Name)','name'=>'source','width'=>'30%'],
-            ['caption'=>'Ziel-Link (ID / Name)','name'=>'target','width'=>'30%']
+            ['caption'=>'Quellvariable','name'=>'sourceVariableID','width'=>'22%','edit'=>['type'=>'SelectVariable'],'save'=>true],
+            ['caption'=>'Ziel-Link (ID)','name'=>'targetLinkID','width'=>'18%','edit'=>['type'=>'SelectObject'],'save'=>true]
         ];
         array_splice($form,1,0,[
             ['type'=>'Label','caption'=>'Quelle: '.$device['path'].' / '.$device['name']],
@@ -740,6 +745,28 @@ class DeviceManager extends IPSModule
         $targets = [];
         foreach (IPS_GetChildrenIDs($dummy) as $child) {
             if (IPS_GetObject($child)['ObjectType'] === 6) $targets[IPS_GetLink($child)['TargetID']] = $child;
+        }
+        $changes = [];
+        foreach ($rows as $row) {
+            $originalID = (int)($row['variableID'] ?? 0);
+            if (!in_array($originalID,array_values($devices[(string)$deviceID]['functions']),true)) continue;
+            $linkID = (int)($row['targetLinkID'] ?? 0);
+            $newSourceID = (int)($row['sourceVariableID'] ?? $originalID);
+            if ($linkID === 0) {
+                if ($newSourceID !== $originalID) throw new Exception('Für eine neue Verknüpfung muss zuerst ein Ziel-Link angelegt werden.');
+                continue;
+            }
+            if (!IPS_ObjectExists($linkID) || IPS_GetObject($linkID)['ObjectType'] !== 6 || IPS_GetParent($linkID) !== $dummy) {
+                throw new Exception('Ziel-Link '.$linkID.' gehört nicht zu diesem Dummy.');
+            }
+            if (!IPS_ObjectExists($newSourceID) || IPS_GetObject($newSourceID)['ObjectType'] !== 2) {
+                throw new Exception('Ungültige Quellvariable '.$newSourceID);
+            }
+            if (isset($changes[$linkID])) throw new Exception('Ziel-Link mehrfach zugeordnet: '.$linkID);
+            $changes[$linkID] = $newSourceID;
+        }
+        foreach ($changes as $linkID=>$newSourceID) {
+            if (IPS_GetLink($linkID)['TargetID'] !== $newSourceID) IPS_SetLinkTargetID($linkID,$newSourceID);
         }
         foreach ($rows as $row) {
             $varID = (int)($row['variableID'] ?? 0);
