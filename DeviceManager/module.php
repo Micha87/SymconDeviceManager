@@ -24,7 +24,7 @@ class DeviceManager extends IPSModule
         foreach (['Floor', 'Room', 'Type', 'Text'] as $field) {
             $this->RegisterAttributeString('LiveFilter' . $field, '');
         }
-        $this->RegisterAttributeString('BuildingPlan', '[]');
+        $this->RegisterAttributeString('BuildingPlan', '{}');
         $this->RegisterAttributeString('DraftFloor', '');
         $this->RegisterAttributeString('DraftRoom', '');
     }
@@ -45,7 +45,7 @@ class DeviceManager extends IPSModule
         $rooms = ['Alle'];
         $types = ['Alle'];
         foreach ($rows as $r) {
-            $parts = explode('/', $r['room']);
+            $parts = explode('/', $r['room'] ?? 'Nicht zugeordnet');
             if ($r['room'] !== 'Nicht zugeordnet') {
                 $floors[] = $parts[0];
                 $rooms[] = $r['room'];
@@ -69,6 +69,7 @@ class DeviceManager extends IPSModule
         $grouped = $this->GroupDevices($filtered);
         $plan = json_decode($this->ReadAttributeString('BuildingPlan'), true);
         if (!is_array($plan)) $plan = [];
+        if (count($plan) === 0) $plan = $this->ReadBuildingPlan();
         $planRows = [];
         foreach ($plan as $floor => $roomNames) {
             if (!is_array($roomNames)) continue;
@@ -84,10 +85,10 @@ class DeviceManager extends IPSModule
                 ['type' => 'NumberSpinner', 'name' => 'HardwareRoot', 'caption' => 'Hardware-Kategorie (ID)'],
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
-                ['type' => 'Select', 'name' => 'FilterFloor', 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $FilterFloor);'],
-                ['type' => 'Select', 'name' => 'FilterRoom', 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $FilterRoom);'],
-                ['type' => 'Select', 'name' => 'FilterType', 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types), 'onChange' => 'SDM_SetLiveFilter($id, "Type", $FilterType);'],
-                ['type' => 'ValidationTextBox', 'name' => 'FilterText', 'caption' => 'Freitext (Name / ID / Funktion)', 'onChange' => 'SDM_SetLiveFilter($id, "Text", $FilterText);'],
+                ['type' => Select, 'name' => 'FilterFloor', 'value' => $filterFloor, 'caption' => 'Filter Etage', 'options' => $selectOptions($floors), 'onChange' => 'SDM_SetLiveFilter($id, "Floor", $FilterFloor);'],
+                ['type' => Select, 'name' => 'FilterRoom', 'value' => $filterRoom, 'caption' => 'Filter Raum', 'options' => $selectOptions($rooms), 'onChange' => 'SDM_SetLiveFilter($id, "Room", $FilterRoom);'],
+                ['type' => Select, 'name' => 'FilterType', 'value' => $filterType, 'caption' => 'Filter Gerätetyp', 'options' => $selectOptions($types), 'onChange' => 'SDM_SetLiveFilter($id, "Type", $FilterType);'],
+                ['type' => ValidationTextBox, 'name' => 'FilterText', 'value' => $filterText, 'caption' => 'Freitext (Name / ID / Funktion)', 'onChange' => 'SDM_SetLiveFilter($id, "Text", $FilterText);'],
                 ['type' => 'Label', 'caption' => count($filtered) . ' von ' . count($rows) . ' Datenpunkten sichtbar. Filter aktualisieren die Ansicht ohne Schließen (Freitext nach Eingabebestätigung).'],
                 ['type' => 'Label', 'caption' => count($grouped) . ' erkannte Gerätegruppen (vorläufig; Zuordnungen prüfen)'],
                 ['type' => 'ExpansionPanel', 'caption' => 'Gebäudeverwaltung (Entwurf, noch keine Objektänderungen)', 'items' => [
@@ -152,11 +153,12 @@ class DeviceManager extends IPSModule
         }
         $rows = [];
         $seen = [];
-        $this->ScanBranch($root, $aliases, $rows, 0, null, $seen);
+        // Prioritize the building tree: otherwise large hardware scans can reach the limit first.
         $building = $this->ReadPropertyInteger('BuildingRoot');
         if ($building > 0 && IPS_ObjectExists($building) && $building !== $root) {
             $this->ScanBranch($building, $aliases, $rows, 0, null, $seen);
         }
+        $this->ScanBranch($root, $aliases, $rows, 0, null, $seen);
         $this->WriteAttributeString('LastScan', json_encode($rows, JSON_UNESCAPED_UNICODE));
         $this->SendDebug('Scan', count($rows) . ' Kandidaten', 0);
         return count($rows);
@@ -188,6 +190,15 @@ class DeviceManager extends IPSModule
     {
         $root = $this->ReadPropertyInteger('BuildingRoot');
         if (!IPS_ObjectExists($root)) throw new Exception('Gebäude-Kategorie fehlt');
+        $plan = $this->ReadBuildingPlan();
+        $this->WriteAttributeString('BuildingPlan', json_encode($plan, JSON_UNESCAPED_UNICODE));
+        $this->ReloadForm();
+    }
+
+    private function ReadBuildingPlan()
+    {
+        $root = $this->ReadPropertyInteger('BuildingRoot');
+        if (!IPS_ObjectExists($root)) return [];
         $plan = [];
         foreach (IPS_GetChildrenIDs($root) as $floorID) {
             $floor = IPS_GetObject($floorID);
@@ -199,8 +210,7 @@ class DeviceManager extends IPSModule
                 if ($room['ObjectType'] === 0) $plan[$floorName][] = $room['ObjectName'];
             }
         }
-        $this->WriteAttributeString('BuildingPlan', json_encode($plan, JSON_UNESCAPED_UNICODE));
-        $this->ReloadForm();
+        return $plan;
     }
 
     public function EditBuildingPlan($action)
@@ -235,7 +245,7 @@ class DeviceManager extends IPSModule
 
     private function ScanBranch($parent, $aliases, &$rows, $depth, $roomPath, &$seen)
     {
-        if ($depth > 20 || count($rows) >= 2000) {
+        if ($depth > 20 || count($rows) >= 4000) {
             return;
         }
         foreach (IPS_GetChildrenIDs($parent) as $id) {
@@ -245,6 +255,9 @@ class DeviceManager extends IPSModule
             if ($object['ObjectType'] === 1 && !isset($seen[$id])) {
                 $seen[$id] = true;
                 $name = $object['ObjectName'];
+                $module = IPS_GetInstance($id)['ModuleInfo']['ModuleName'] ?? '';
+                // Skip container-like device instances that expose many unrelated subfunctions.
+                $isContainer = count(IPS_GetChildrenIDs($id)) > 12;
                 $parsed = $this->ParseName($name, $aliases);
                 if ($pathRoom !== null) {
                     $parsed['room'] = $pathRoom;
@@ -258,13 +271,13 @@ class DeviceManager extends IPSModule
                     $rows[] = [
                         'room' => $parsed['room'],
                         'deviceType' => $this->GuessType($name),
-                        'device' => $parsed['device'],
+                        'device' => $isContainer ? $name . ' / ' . $child['ObjectName'] : $parsed['device'],
                         'function' => $parsed['function'] !== 'Unbekannt' ? $parsed['function'] : $child['ObjectName'],
                         'instance' => (string) $id,
                         'variable' => (string) $childID,
                         'confidence' => $parsed['confidence']
                     ];
-                    if (count($rows) >= 2000) {
+                    if (count($rows) >= 4000) {
                         return;
                     }
                 }
