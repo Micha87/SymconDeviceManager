@@ -331,6 +331,8 @@ class DeviceManager extends IPSModule
             $cursor = IPS_GetParent($cursor);
         }
         $rooms = $this->ReadBuildingPlan($this->ReadPropertyInteger('ManagedBuildingRoot'));
+        $aliases = json_decode($this->ReadPropertyString('RoomAliases'), true);
+        if (!is_array($aliases)) $aliases = [];
         $room = '';
         $floor = '';
         foreach ($rooms as $floorName => $roomNames) {
@@ -343,8 +345,20 @@ class DeviceManager extends IPSModule
                 }
             }
         }
+        if ($room === '') {
+            foreach ($aliases as $token => $location) {
+                if ($token !== '' && mb_strpos(mb_strtolower($name . ' ' . implode(' ', $segments), 'UTF-8'), mb_strtolower($token, 'UTF-8')) !== false) {
+                    $parts = explode('/', (string) $location);
+                    if (count($parts) >= 2) { $floor = $parts[0]; $room = $parts[1]; break; }
+                }
+            }
+        }
         if ($room === '' && preg_match('/^([^_]+)_([^_]+)/u', $name, $m)) {
             $room = $m[1];
+        }
+        if ($room === '') {
+            if (preg_match('/\\blotta\\b/iu', $name . ' ' . implode(' ', $segments))) { $floor = 'OG'; $room = 'Lotta'; }
+            elseif (preg_match('/\\bluise\\b/iu', $name . ' ' . implode(' ', $segments))) { $floor = 'OG'; $room = 'Luise'; }
         }
         $trade = 'Unbekannt';
         $haystack = mb_strtolower(implode(' ', $segments) . ' ' . $name, 'UTF-8');
@@ -396,9 +410,12 @@ class DeviceManager extends IPSModule
         if (!$target) $controls[] = ['type' => 'Label', 'caption' => 'Zielkategorie fehlt oder liegt nicht unter der verwalteten Gebäudestruktur.'];
         foreach ($devices as $id => $device) {
             $dummy = $target ? $this->FindDeviceDummy($target, $device['name']) : 0;
+            $functionCount = count($device['functions']);
+            $previewFunctions = array_slice($device['functions'], 0, 4, true);
             $functions = implode(', ', array_map(static function ($name, $variable) {
                 return $name . ' → ' . $variable;
-            }, array_keys($device['functions']), array_values($device['functions'])));
+            }, array_keys($previewFunctions), array_values($previewFunctions)));
+            if ($functionCount > 4) $functions .= ', … (insgesamt ' . $functionCount . ' Variablen)';
             $proposal = $device['proposal'];
             $caption = $device['name'] . ' [' . $functions . '] — ' . $device['path'] . ' | Vorschlag: ' . ($proposal['floor'] ?: '?') . '/' . ($proposal['room'] ?: '?') . '/' . $proposal['trade'];
             if ($dummy) {
