@@ -172,7 +172,21 @@ class ManagedDevice extends IPSModule
                 ['type'=>'ValidationTextBox','name'=>'Trade','caption'=>'Gewerk'],
                 ['type'=>'SelectCategory','name'=>'ManagedBuildingRoot','caption'=>'Gebäude-Zielkategorie'],
                 ['type'=>'Label','caption'=>'Links werden unter dieser Geräteinstanz angelegt. Vorhandene Link-IDs bleiben beim Umbenennen erhalten.'],
-                ['type'=>'Label','caption'=>'Die Linknamen können unten bearbeitet werden. Die Symcon-Configurator-Stifte unterstützen nur Instanzen, keine Linkobjekte; deshalb wurde die rote Linkübersicht entfernt.'],
+                ['type'=>'Configurator','name'=>'LinkConfigurator','caption'=>'Linkübersicht','rowCount'=>15,
+                    'columns'=>[
+                        ['caption'=>'Linkname','name'=>'name','width'=>'35%'],
+                        ['caption'=>'Quellname','name'=>'sourceName','width'=>'40%'],
+                        ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'100px']
+                    ],
+                    'values'=>array_map(static function($row) {
+                        return [
+                            'name'=>$row['name'],
+                            'sourceName'=>$row['sourceName'],
+                            'sourceIDLabel'=>$row['sourceIDLabel'],
+                            'instanceID'=>$row['instanceID']
+                        ];
+                    },$rows)
+                ],
                 ['type'=>'List','name'=>'Links','caption'=>'Linkauswahl und Namensvorgaben','rowCount'=>15,'add'=>false,'delete'=>false,
                     'columns'=>[
                         ['caption'=>'Verlinken','name'=>'enabled','width'=>'85px','edit'=>['type'=>'CheckBox']],
