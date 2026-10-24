@@ -137,11 +137,13 @@ class ManagedDevice extends IPSModule
         }
         $rows = [];
         foreach ($vars as $id=>$name) {
+            $storedName = (string)($selected[$id]['name'] ?? $selected[$id]['linkName'] ?? '');
+            if ($this->IsLegacyAutomaticName($storedName,(int)$id,$name)) $storedName = $this->SuggestedLinkName((int)$id,$name);
             $rows[] = [
                 'sourceID'=>$id,
                 'sourceIDLabel'=>(string)$id,
                 'enabled'=>isset($selected[$id]) ? (bool)($selected[$id]['enabled'] ?? true) : true,
-                'name'=>(string)($selected[$id]['name'] ?? $selected[$id]['linkName'] ?? $this->SuggestedLinkName((int)$id,$name)),
+                'name'=>$storedName,
                 'sourceName'=>$name
             ];
         }
