@@ -115,6 +115,13 @@ class ManagedDevice extends IPSModule
     {
         if ($name === '' || $name === $sourceName) return true;
         if ($sourceName === 'Wert') {
+            $rules = json_decode($this->ReadPropertyString('LinkNameRules'), true);
+            foreach (is_array($rules) ? $rules : [] as $rule) {
+                $candidate = trim((string)($rule['to'] ?? ''));
+                if ($candidate !== '' && strcasecmp($name, $candidate) === 0) return true;
+            }
+        }
+        if ($sourceName === 'Wert') {
             $parent = IPS_GetParent($sourceID);
             if ($parent > 0 && IPS_ObjectExists($parent) && $name === IPS_GetName($parent)) return true;
         }
@@ -136,10 +143,18 @@ class ManagedDevice extends IPSModule
             if ($id > 0) $selected[$id] = $entry;
         }
         $rows = [];
+        $existingLinks = [];
+        foreach (IPS_GetChildrenIDs($this->InstanceID) as $child) {
+            if (IPS_GetObject($child)['ObjectType'] === 6) {
+                $target = (int)IPS_GetLink($child)['TargetID'];
+                if (!isset($existingLinks[$target])) $existingLinks[$target] = $child;
+            }
+        }
         foreach ($vars as $id=>$name) {
             $storedName = (string)($selected[$id]['name'] ?? $selected[$id]['linkName'] ?? '');
             if ($this->IsLegacyAutomaticName($storedName,(int)$id,$name)) $storedName = $this->SuggestedLinkName((int)$id,$name);
             $rows[] = [
+                'instanceID'=>(int)($existingLinks[$id] ?? 0),
                 'sourceID'=>$id,
                 'sourceIDLabel'=>(string)$id,
                 'enabled'=>isset($selected[$id]) ? (bool)($selected[$id]['enabled'] ?? true) : true,
@@ -156,12 +171,27 @@ class ManagedDevice extends IPSModule
                 ['type'=>'ValidationTextBox','name'=>'Trade','caption'=>'Gewerk'],
                 ['type'=>'SelectCategory','name'=>'ManagedBuildingRoot','caption'=>'Gebäude-Zielkategorie'],
                 ['type'=>'Label','caption'=>'Links werden unter dieser Geräteinstanz angelegt. Vorhandene Link-IDs bleiben beim Umbenennen erhalten.'],
-                ['type'=>'List','name'=>'Links','caption'=>'Verknüpfte Variablen','rowCount'=>15,'add'=>false,'delete'=>false,
+                ['type'=>'Configurator','name'=>'LinkConfigurator','caption'=>'Linkübersicht (Stift am Linknamen)','rowCount'=>15,
+                    'columns'=>[
+                        ['caption'=>'Linkname','name'=>'name','width'=>'35%'],
+                        ['caption'=>'Quellname','name'=>'sourceName','width'=>'40%'],
+                        ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'100px']
+                    ],
+                    'values'=>array_map(static function($row) {
+                        return [
+                            'name'=>$row['name'],
+                            'sourceName'=>$row['sourceName'],
+                            'sourceIDLabel'=>$row['sourceIDLabel'],
+                            'instanceID'=>$row['instanceID']
+                        ];
+                    },$rows)
+                ],
+                ['type'=>'List','name'=>'Links','caption'=>'Linkauswahl und Namensvorgaben','rowCount'=>15,'add'=>false,'delete'=>false,
                     'columns'=>[
                         ['caption'=>'Verlinken','name'=>'enabled','width'=>'85px','edit'=>['type'=>'CheckBox']],
                         ['caption'=>'Linkname','name'=>'name','width'=>'35%','edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Quellname','name'=>'sourceName','width'=>'45%','edit'=>['type'=>'ValidationTextBox']],
-                        ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'90px','edit'=>['type'=>'ValidationTextBox']]
+                        ['caption'=>'Quellname','name'=>'sourceName','width'=>'45%'],
+                        ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'90px']
                     ],
                     'values'=>$rows
                 ]
