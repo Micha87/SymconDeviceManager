@@ -153,8 +153,9 @@ class ManagedDevice extends IPSModule
         foreach ($vars as $id=>$name) {
             $storedName = (string)($selected[$id]['name'] ?? $selected[$id]['linkName'] ?? '');
             if ($this->IsLegacyAutomaticName($storedName,(int)$id,$name)) $storedName = $this->SuggestedLinkName((int)$id,$name);
+            $linkID = (int)($existingLinks[$id] ?? 0);
             $rows[] = [
-                'instanceID'=>(int)($existingLinks[$id] ?? 0),
+                'instanceID'=>$linkID,
                 'sourceID'=>$id,
                 'sourceIDLabel'=>(string)$id,
                 'enabled'=>isset($selected[$id]) ? (bool)($selected[$id]['enabled'] ?? true) : true,
@@ -171,21 +172,7 @@ class ManagedDevice extends IPSModule
                 ['type'=>'ValidationTextBox','name'=>'Trade','caption'=>'Gewerk'],
                 ['type'=>'SelectCategory','name'=>'ManagedBuildingRoot','caption'=>'Gebäude-Zielkategorie'],
                 ['type'=>'Label','caption'=>'Links werden unter dieser Geräteinstanz angelegt. Vorhandene Link-IDs bleiben beim Umbenennen erhalten.'],
-                ['type'=>'Configurator','name'=>'LinkConfigurator','caption'=>'Linkübersicht (Stift am Linknamen)','rowCount'=>15,
-                    'columns'=>[
-                        ['caption'=>'Linkname','name'=>'name','width'=>'35%'],
-                        ['caption'=>'Quellname','name'=>'sourceName','width'=>'40%'],
-                        ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'100px']
-                    ],
-                    'values'=>array_map(static function($row) {
-                        return [
-                            'name'=>$row['name'],
-                            'sourceName'=>$row['sourceName'],
-                            'sourceIDLabel'=>$row['sourceIDLabel'],
-                            'instanceID'=>$row['instanceID']
-                        ];
-                    },$rows)
-                ],
+                ['type'=>'Label','caption'=>'Die Linknamen können unten bearbeitet werden. Die Symcon-Configurator-Stifte unterstützen nur Instanzen, keine Linkobjekte; deshalb wurde die rote Linkübersicht entfernt.'],
                 ['type'=>'List','name'=>'Links','caption'=>'Linkauswahl und Namensvorgaben','rowCount'=>15,'add'=>false,'delete'=>false,
                     'columns'=>[
                         ['caption'=>'Verlinken','name'=>'enabled','width'=>'85px','edit'=>['type'=>'CheckBox']],
