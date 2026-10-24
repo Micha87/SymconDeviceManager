@@ -123,7 +123,7 @@ class ManagedDevice extends IPSModule
                 'sourceID'=>$id,
                 'sourceIDLabel'=>(string)$id,
                 'enabled'=>isset($selected[$id]) ? (bool)($selected[$id]['enabled'] ?? true) : true,
-                'linkName'=>(string)($selected[$id]['linkName'] ?? $this->SuggestedLinkName((int)$id,$name)),
+                'name'=>(string)($selected[$id]['name'] ?? $selected[$id]['linkName'] ?? $this->SuggestedLinkName((int)$id,$name)),
                 'sourceName'=>$name
             ];
         }
@@ -135,15 +135,11 @@ class ManagedDevice extends IPSModule
                 ['type'=>'ValidationTextBox','name'=>'Room','caption'=>'Raum'],
                 ['type'=>'ValidationTextBox','name'=>'Trade','caption'=>'Gewerk'],
                 ['type'=>'SelectCategory','name'=>'ManagedBuildingRoot','caption'=>'Gebäude-Zielkategorie'],
-                ['type'=>'List','name'=>'LinkNameRules','caption'=>'Linknamen-Regeln (exakte Quellnamen)','rowCount'=>6,'add'=>true,'delete'=>true,'columns'=>[
-                    ['caption'=>'Quellname','name'=>'from','width'=>'50%','edit'=>['type'=>'ValidationTextBox']],
-                    ['caption'=>'Anzeigen als','name'=>'to','width'=>'50%','edit'=>['type'=>'ValidationTextBox']]
-                ]],
                 ['type'=>'Label','caption'=>'Links werden unter dieser Geräteinstanz angelegt. Vorhandene Link-IDs bleiben beim Umbenennen erhalten.'],
                 ['type'=>'List','name'=>'Links','caption'=>'Verknüpfte Variablen','rowCount'=>15,'add'=>false,'delete'=>false,
                     'columns'=>[
                         ['caption'=>'Verlinken','name'=>'enabled','width'=>'85px','edit'=>['type'=>'CheckBox']],
-                        ['caption'=>'Linkname','name'=>'linkName','width'=>'35%','edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Linkname','name'=>'name','width'=>'35%','edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Quellname','name'=>'sourceName','width'=>'45%','edit'=>['type'=>'ValidationTextBox']],
                         ['caption'=>'Quell-ID','name'=>'sourceIDLabel','width'=>'90px','edit'=>['type'=>'ValidationTextBox']]
                     ],
@@ -176,7 +172,7 @@ class ManagedDevice extends IPSModule
             if (!$sourceID || !isset($sourceVars[$sourceID])) continue;
             $enabled = (bool)($row['enabled'] ?? true);
             if (!$enabled) continue; // Disabling never destroys existing links automatically.
-            $name = trim((string)($row['linkName'] ?? ''));
+            $name = trim((string)($row['name'] ?? $row['linkName'] ?? ''));
             if ($name === '') $name = $this->SuggestedLinkName($sourceID,$sourceVars[$sourceID]);
             $link = (int)($existing[$sourceID][0] ?? 0);
             if (!$link) {
