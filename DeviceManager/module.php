@@ -14,6 +14,7 @@ class DeviceManager extends IPSModule
         $this->RegisterPropertyInteger('ManagedBuildingRoot', 58840);
         $this->RegisterPropertyInteger('DeviceSourceCategory', 57856);
         $this->RegisterPropertyInteger('DeviceTargetCategory', 27803);
+        $this->RegisterPropertyString('LinkNameRules', json_encode([['from'=>'s','to'=>'Schalten'],['from'=>'d','to'=>'Dimmen'],['from'=>'w','to'=>'Wert'],['from'=>'s.Status','to'=>'Schaltstatus'],['from'=>'w.Status','to'=>'Wertstatus']],JSON_UNESCAPED_UNICODE));
         $this->RegisterPropertyString('RoomAliases', json_encode([
             'wohnzim' => 'EG/Wohnzimmer', 'wohnzimmer' => 'EG/Wohnzimmer',
             'kü' => 'EG/Küche', 'kueche' => 'EG/Küche', 'küche' => 'EG/Küche',
@@ -109,6 +110,13 @@ class DeviceManager extends IPSModule
                 ['type' => 'NumberSpinner', 'name' => 'BuildingRoot', 'caption' => 'Bestehende Gebäude-Kategorie (ID)'],
                 ['type' => 'SelectCategory', 'name' => 'DeviceSourceCategory', 'caption' => 'Gerätequelle auswählen (Hardware)'],
                 ['type' => 'ValidationTextBox', 'name' => 'RoomAliases', 'caption' => 'Raum-Aliasse (JSON)'],
+                ['type'=>'ExpansionPanel','caption'=>'Linknamen-Regeln (KNX und weitere)','items'=>[
+                    ['type'=>'Label','caption'=>'Quellnamen werden exakt verglichen. Regeln können ergänzt und in jeder Geräteinstanz angepasst werden. Bereits manuell vergebene Linknamen bleiben erhalten.'],
+                    ['type'=>'List','name'=>'LinkNameRules','caption'=>'Kürzel übersetzen','rowCount'=>8,'add'=>true,'delete'=>true,'columns'=>[
+                        ['caption'=>'Quellname','name'=>'from','width'=>'50%','edit'=>['type'=>'ValidationTextBox']],
+                        ['caption'=>'Linkname','name'=>'to','width'=>'50%','edit'=>['type'=>'ValidationTextBox']]
+                    ]]
+                ]],
                 ['type' => 'ExpansionPanel', 'caption' => 'Gebäudeverwaltung – neue Struktur', 'items' => [
                     ['type' => 'Label', 'caption' => 'Die Aktionen „in Symcon anlegen“ erzeugen echte Kategorien ausschließlich unter der Ziel-ID. Bestehende Kategorien werden wiederverwendet. Löschen ist hier nicht möglich.'],
                     ['type' => 'List', 'name' => 'BuildingPreview', 'caption' => 'Geplante Etagen und Räume',
@@ -1143,6 +1151,7 @@ class DeviceManager extends IPSModule
                         'Room'=>(string)$a['room'],
                         'Trade'=>(string)$a['trade'],
                         'ManagedBuildingRoot'=>$this->ReadPropertyInteger('ManagedBuildingRoot'),
+                        'LinkNameRules'=>$this->ReadPropertyString('LinkNameRules'),
                         'Links'=>json_encode(array_map(static function($variableID) { return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>(IPS_GetName((int)$variableID) === 'Wert' && IPS_GetParent((int)$variableID) > 0 ? IPS_GetName(IPS_GetParent((int)$variableID)) : IPS_GetName((int)$variableID))]; },array_values($device['functions'])),JSON_UNESCAPED_UNICODE)
                     ],
                     'location'=>array_values(array_filter([$a['floor'],$a['room'],$a['trade']]))
