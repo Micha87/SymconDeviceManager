@@ -15,6 +15,7 @@ class ManagedDevice extends IPSModule
         $this->RegisterPropertyString('Trade', '');
         $this->RegisterPropertyInteger('ManagedBuildingRoot', 58840);
         $this->RegisterPropertyString('Links', '[]');
+        $this->RegisterPropertyString('LinkNameRules', json_encode([['from'=>'s','to'=>'Schalten'],['from'=>'d','to'=>'Dimmen'],['from'=>'w','to'=>'Wert'],['from'=>'s.Status','to'=>'Schaltstatus'],['from'=>'w.Status','to'=>'Wertstatus']],JSON_UNESCAPED_UNICODE));
     }
 
     public function ApplyChanges()
@@ -87,13 +88,19 @@ class ManagedDevice extends IPSModule
 
     private function SuggestedLinkName(int $variableID, string $sourceName): string
     {
-        if ($sourceName !== 'Wert') return $sourceName;
-        $parent = IPS_GetParent($variableID);
-        if ($parent > 0 && IPS_ObjectExists($parent)) {
-            $parentName = trim(IPS_GetName($parent));
-            if ($parentName !== '') return $parentName;
+        $name = trim($sourceName);
+        if ($name === 'Wert') {
+            $parent = IPS_GetParent($variableID);
+            if ($parent > 0 && IPS_ObjectExists($parent)) $name = trim(IPS_GetName($parent));
         }
-        return $sourceName . ' ' . $variableID;
+        $rules = json_decode($this->ReadPropertyString('LinkNameRules'),true);
+        if (!is_array($rules)) $rules = [];
+        foreach ($rules as $rule) {
+            $from = trim((string)($rule['from'] ?? ''));
+            $to = trim((string)($rule['to'] ?? ''));
+            if ($from !== '' && $to !== '' && strcasecmp($name,$from) === 0) return $to;
+        }
+        return $name !== '' ? $name : 'Variable '.$variableID;
     }
 
     public function GetConfigurationForm()
@@ -128,6 +135,10 @@ class ManagedDevice extends IPSModule
                 ['type'=>'ValidationTextBox','name'=>'Room','caption'=>'Raum'],
                 ['type'=>'ValidationTextBox','name'=>'Trade','caption'=>'Gewerk'],
                 ['type'=>'SelectCategory','name'=>'ManagedBuildingRoot','caption'=>'Gebäude-Zielkategorie'],
+                ['type'=>'List','name'=>'LinkNameRules','caption'=>'Linknamen-Regeln (exakte Quellnamen)','rowCount'=>6,'add'=>true,'delete'=>true,'columns'=>[
+                    ['caption'=>'Quellname','name'=>'from','width'=>'50%','edit'=>['type'=>'ValidationTextBox']],
+                    ['caption'=>'Anzeigen als','name'=>'to','width'=>'50%','edit'=>['type'=>'ValidationTextBox']]
+                ]],
                 ['type'=>'Label','caption'=>'Links werden unter dieser Geräteinstanz angelegt. Vorhandene Link-IDs bleiben beim Umbenennen erhalten.'],
                 ['type'=>'List','name'=>'Links','caption'=>'Verknüpfte Variablen','rowCount'=>15,'add'=>false,'delete'=>false,
                     'columns'=>[
