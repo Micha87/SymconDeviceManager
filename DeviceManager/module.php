@@ -1157,9 +1157,21 @@ class DeviceManager extends IPSModule
                             $name = ($sourceName === 'Wert' && IPS_GetParent((int)$variableID) > 0) ? IPS_GetName(IPS_GetParent((int)$variableID)) : $sourceName;
                             $rules = json_decode($this->ReadPropertyString('LinkNameRules'),true);
                             foreach (is_array($rules) ? $rules : [] as $rule) {
-                                if (trim((string)($rule['from'] ?? '')) !== '' && strcasecmp($name,(string)$rule['from']) === 0 && trim((string)($rule['to'] ?? '')) !== '') {
-                                    $name = (string)$rule['to'];
+                                $from = trim((string)($rule['from'] ?? ''));
+                                $to = trim((string)($rule['to'] ?? ''));
+                                if ($from !== '' && $to !== '' && strcasecmp($name,$from) === 0) {
+                                    $name = $to;
                                     break;
+                                }
+                            }
+                            if ($name === $sourceName || ($sourceName === 'Wert' && IPS_GetParent((int)$variableID) > 0 && $name === IPS_GetName(IPS_GetParent((int)$variableID)))) {
+                                foreach (is_array($rules) ? $rules : [] as $rule) {
+                                    $from = trim((string)($rule['from'] ?? ''));
+                                    $to = trim((string)($rule['to'] ?? ''));
+                                    if ($from !== '' && $to !== '' && strlen($name) > strlen($from)+1 && strcasecmp(substr($name,-strlen($from)-1),'_'.$from) === 0) {
+                                        $name = $to;
+                                        break;
+                                    }
                                 }
                             }
                             return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>$name];
