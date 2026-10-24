@@ -1152,7 +1152,18 @@ class DeviceManager extends IPSModule
                         'Trade'=>(string)$a['trade'],
                         'ManagedBuildingRoot'=>$this->ReadPropertyInteger('ManagedBuildingRoot'),
                         'LinkNameRules'=>$this->ReadPropertyString('LinkNameRules'),
-                        'Links'=>json_encode(array_map(static function($variableID) { return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>(IPS_GetName((int)$variableID) === 'Wert' && IPS_GetParent((int)$variableID) > 0 ? IPS_GetName(IPS_GetParent((int)$variableID)) : IPS_GetName((int)$variableID))]; },array_values($device['functions'])),JSON_UNESCAPED_UNICODE)
+                        'Links'=>json_encode(array_map(function($variableID) {
+                            $sourceName = IPS_GetName((int)$variableID);
+                            $name = ($sourceName === 'Wert' && IPS_GetParent((int)$variableID) > 0) ? IPS_GetName(IPS_GetParent((int)$variableID)) : $sourceName;
+                            $rules = json_decode($this->ReadPropertyString('LinkNameRules'),true);
+                            foreach (is_array($rules) ? $rules : [] as $rule) {
+                                if (trim((string)($rule['from'] ?? '')) !== '' && strcasecmp($name,(string)$rule['from']) === 0 && trim((string)($rule['to'] ?? '')) !== '') {
+                                    $name = (string)$rule['to'];
+                                    break;
+                                }
+                            }
+                            return ['sourceID'=>(int)$variableID,'enabled'=>true,'linkName'=>$name];
+                        },array_values($device['functions'])),JSON_UNESCAPED_UNICODE)
                     ],
                     'location'=>array_values(array_filter([$a['floor'],$a['room'],$a['trade']]))
                 ]
