@@ -95,12 +95,30 @@ class ManagedDevice extends IPSModule
         }
         $rules = json_decode($this->ReadPropertyString('LinkNameRules'),true);
         if (!is_array($rules)) $rules = [];
+        // Exact names first, then KNX suffixes like Bel.Wohnzimmer.TV_s.
         foreach ($rules as $rule) {
             $from = trim((string)($rule['from'] ?? ''));
             $to = trim((string)($rule['to'] ?? ''));
-            if ($from !== '' && $to !== '' && strcasecmp($name,$from) === 0) return $to;
+            if ($from === '' || $to === '') continue;
+            if (strcasecmp($name,$from) === 0) return $to;
+        }
+        foreach ($rules as $rule) {
+            $from = trim((string)($rule['from'] ?? ''));
+            $to = trim((string)($rule['to'] ?? ''));
+            if ($from === '' || $to === '') continue;
+            if (strlen($name) > strlen($from) + 1 && strcasecmp(substr($name,-strlen($from)-1),'_'.$from) === 0) return $to;
         }
         return $name !== '' ? $name : 'Variable '.$variableID;
+    }
+
+    private function IsLegacyAutomaticName(string $name, int $sourceID, string $sourceName): bool
+    {
+        if ($name === '' || $name === $sourceName) return true;
+        if ($sourceName === 'Wert') {
+            $parent = IPS_GetParent($sourceID);
+            if ($parent > 0 && IPS_ObjectExists($parent) && $name === IPS_GetName($parent)) return true;
+        }
+        return false;
     }
 
     public function GetConfigurationForm()
@@ -173,7 +191,7 @@ class ManagedDevice extends IPSModule
             $enabled = (bool)($row['enabled'] ?? true);
             if (!$enabled) continue; // Disabling never destroys existing links automatically.
             $name = trim((string)($row['name'] ?? $row['linkName'] ?? ''));
-            if ($name === '') $name = $this->SuggestedLinkName($sourceID,$sourceVars[$sourceID]);
+            if ($this->IsLegacyAutomaticName($name,$sourceID,$sourceVars[$sourceID])) $name = $this->SuggestedLinkName($sourceID,$sourceVars[$sourceID]);
             $link = (int)($existing[$sourceID][0] ?? 0);
             if (!$link) {
                 $link = IPS_CreateLink();
